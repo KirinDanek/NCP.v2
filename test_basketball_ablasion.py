@@ -1,4 +1,7 @@
+import torch
+import numpy as np
 import NCP
+from NCP import AugmentedVGG16, ablate_subspace_matrix
 
 from torchvision import transforms
 from PIL import Image 
@@ -7,13 +10,15 @@ from captum.attr import LRP
 
 ### vars
 SUBSPACE_DIMS = [128, 128, 128, 128]
-IRRELEVANT_SUBSPACES = [3] ### test: ablate "ball" subspace. Should be easy to see in LRP heatmap
+IRRELEVANT_SUBSPACES = [3]  # test: ablate "ball" subspace. Should be easy to see in LRP heatmap
 U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_tensor.pt'
 IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa-basketball-img3.jpg'
 OUTPUT_HEATMAP_PATH = 'lrp_overlay.png'
-TARGET_CLASS = 437 # basketball in imagenet (430??)
 
-### IMPLEMENTATION OF LRP FROM CHATGPT
+# "basketball" in ImageNet is class index 437 (zero‐indexed)
+TARGET_CLASS = 437  
+
+
 def load_and_preprocess(image_path: str, device: torch.device):
     """
     Load an image from disk, resize→center‐crop→tensor→normalize for VGG16.
@@ -30,9 +35,10 @@ def load_and_preprocess(image_path: str, device: torch.device):
     tensor = preprocess(img).unsqueeze(0).to(device)  # shape: (1,3,224,224)
     return tensor, img
 
+
 def visualize_and_save_lrp(orig_pil: Image.Image,
                            attribution_tensor: torch.Tensor,
-                           out_path: str = "lrp_overlay.png"):
+                           out_path: str = OUTPUT_HEATMAP_PATH):
     """
     Create a heatmap overlay of LRP attributions onto the original image,
     then save to 'out_path'.
@@ -53,7 +59,7 @@ def visualize_and_save_lrp(orig_pil: Image.Image,
     ax.imshow(orig_array)
     ax.imshow(heatmap, cmap='jet', alpha=0.4)
     ax.axis('off')
-    plt.title("LRP Heatmap Overlay")
+    plt.title("LRP Heatmap Overlay (target = basketball)")
 
     fig.savefig(out_path, bbox_inches='tight', pad_inches=0)
     plt.close(fig)
@@ -65,7 +71,7 @@ if __name__ == "__main__":
 
     ### 1. Load tensor U, ablate and move to GPU
     U = torch.load(U_FILEPATH)  # shape: (512, 512)
-    U_ab, U_ab_T = NCP.ablate_subspace_matrix(U, SUBSPACE_DIMS, IRRELEVANT_SUBSPACES)
+    U_ab, U_ab_T = ablate_subspace_matrix(U, SUBSPACE_DIMS, IRRELEVANT_SUBSPACES)
     U_ab = U_ab.to(device)
     U_ab_T = U_ab_T.to(device)
 
@@ -76,18 +82,10 @@ if __name__ == "__main__":
     ### 3. Load and preprocess the input image
     input_tensor, orig_pil = load_and_preprocess(IMAGE_FILEPATH, device=device)
 
-    ### 4. Forward pass to pick top‐predicted class
-    with torch.no_grad():
-        logits = augmentedVGG16(input_tensor)     # → (1, 1000)
-        probs = torch.softmax(logits, dim=1)
-        top_prob, top_catid = torch.max(probs, dim=1)
-        pred_class = top_catid.item()
-        print(f"Predicted class = {pred_class}  (prob={top_prob.item():.4f})")
-
-    ### 5. Compute LRP attributions (ε‐rule by default)
+    ### 4. Compute LRP attributions for the fixed TARGET_CLASS
     input_tensor.requires_grad_(True)
-    lrp = LRP(augmentedVGG16)  # Initialize Captum’s LRP with our model
+    lrp = LRP(augmentedVGG16)  
     attributions = lrp.attribute(input_tensor, target=TARGET_CLASS)  # → (1, 3, 224, 224)
 
-    ### 6. Visualize & save the heatmap overlay to disk
+    ### 5. Visualize & save the heatmap overlay to disk
     visualize_and_save_lrp(orig_pil, attributions, out_path=OUTPUT_HEATMAP_PATH)

@@ -3,41 +3,29 @@ import torch
 from torch import nn
 from torchvision.models import vgg16
 
-
 #### Take as input a subspace nn.Parameter U of dimension DxD, a list of 
 # dimensions of each DRSA subspace, and a list of irrelevant subspace
 # indices (zero indexed). Returns (new) ablated weight matrices U_ab and U_ab_transpose.
-def ablate_subspace_matrix(U: torch.Tensor, subspace_dims: list[int], irrelevant_subspaces: list[int]):
+def ablate_subspace_matrix(U: torch.Tensor, subspace_dims: list, irrelevant_subspaces: list):
     U_ab = U.clone()
     U_ab_transpose = U.t().clone()
 
     for k_prime in irrelevant_subspaces:
-         start_dim = sum(subspace_dims[:k_prime])
-         block_size = subspace_dims[k_prime]
-         U_ab[:, start_dim : start_dim + block_size] = 0
-         U_ab_transpose[start_dim : start_dim + block_size, :] = 0
-         
-    return U_ab, U_ab_transpose
+        start_dim = sum(subspace_dims[:k_prime])
+        block_size = subspace_dims[k_prime]
+        U_ab[:, start_dim : start_dim + block_size] = 0
+        U_ab_transpose[start_dim : start_dim + block_size, :] = 0
 
-#### TODO: generalize for any network. 
-# Take as input DxD nn.Parameters U_ab and U_ab_transpose, pretrained 
-# neural network model, and subspace extraction layer l_star. Create two
-# new layers of model h1 and h2 s.t. ...->l_star->h1->h2->l_star+1->...
-# where h1 = U_ab_transpose x l_star, h2 = U_ab x h1, and the original 
-# weights connecting l_star to l_star+1 now connect h2 to l_star+1.
-# Return modified model.
-#def append_layers(model: nn.Module, U_ab: torch.Tensor, U_ab_transpose:
-#                   torch.Tensor, l_star:str) -> nn.Module:
-#     return model
+    return U_ab, U_ab_transpose
 
 
 #### Given U and UT (ablated) torch.Tensors in R(512x512), insert virtual
 # layer at conv4_3 (as described in Chormai et al 2024).
 # ex use: 
-# U     = U_ab.cuda()
-# UT    = U_ab_transpose.cuda()
-# model = AugmentedVGG16(U=U, UT=UT).cuda()
-# model.eval()
+#    U     = U_ab.cuda()
+#    UT    = U_ab_transpose.cuda()
+#    model = AugmentedVGG16(U=U, UT=UT).cuda()
+#    model.eval()
 ### adapted from https://github.com/p16i/drsa-demo/blob/main/cxai/inspector/base.py
 class AugmentedVGG16(nn.Module):
     def __init__(self, U: torch.Tensor, UT: torch.Tensor):
@@ -101,4 +89,3 @@ class AugmentedVGG16(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.classifier(x)
         return x
-
