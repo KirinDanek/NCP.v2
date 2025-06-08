@@ -82,12 +82,17 @@ if __name__ == "__main__":
     augmentedVGG16 = AugmentedVGG16(U=U_ab, UT=U_ab_T).to(device)
     augmentedVGG16.eval()
 
+    ### 2.b set propagation rule https://captum.ai/api/lrp.html
+    for module in augmentedVGG16.modules():
+        if isinstance(module, (nn.Conv2d, nn.Linear)):
+            module.rule = Alpha1_Beta0_Rule()
+
     ### 3. Load and preprocess the input image
     input_tensor, orig_pil = load_and_preprocess(IMAGE_FILEPATH, device=device)
 
     ### 4. Compute LRP attributions for the fixed TARGET_CLASS
     input_tensor.requires_grad_(True)
-    lrp = LRP(augmentedVGG16, alpha=1, beta=0)  
+    lrp = LRP(augmentedVGG16)  
     attributions = lrp.attribute(input_tensor, target=TARGET_CLASS)  # → (1, 3, 224, 224)
 
     ### 5. Visualize & save the heatmap overlay to disk
