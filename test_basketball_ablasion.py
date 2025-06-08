@@ -87,7 +87,7 @@ if __name__ == "__main__":
 
     ### 4. Compute LRP attributions for the fixed TARGET_CLASS
     input_tensor.requires_grad_(True)
-    lrp = LRP(augmentedVGG16, rule_type='alpha-beta', alpha=1, beta=0)  
+    lrp = LRP(augmentedVGG16, alpha=1, beta=0)  
     attributions = lrp.attribute(input_tensor, target=TARGET_CLASS)  # → (1, 3, 224, 224)
 
     ### 5. Visualize & save the heatmap overlay to disk
