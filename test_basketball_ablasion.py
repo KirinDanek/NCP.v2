@@ -15,8 +15,8 @@ U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_te
 IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa-basketball-img3.jpg'
 OUTPUT_HEATMAP_PATH = 'lrp_overlay.png'
 
-# "basketball" in ImageNet is class index 437 (zero‐indexed)
-TARGET_CLASS = 437  
+# "basketball" in ImageNet is class index 430 (zero‐indexed)
+TARGET_CLASS = 430
 
 
 def load_and_preprocess(image_path: str, device: torch.device):
