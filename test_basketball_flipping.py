@@ -12,7 +12,7 @@ from captum.attr import Occlusion
 
 ### vars
 SUBSPACE_DIMS = [128, 128, 128, 128]
-IRRELEVANT_SUBSPACES = [3]  # test: ablate "ball" subspace. Should be easy to see in LRP heatmap
+IRRELEVANT_SUBSPACES = [0,1,2]  # test: ablate "ball" subspace. Should be easy to see in LRP heatmap
 U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_tensor.pt'
 IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa-basketball-img3.jpg'
 OUTPUT_HEATMAP_PATH = 'lrp_overlay.png'
@@ -114,6 +114,13 @@ if __name__ == "__main__":
         baselines=imagenet_mean
     )
     
+    ### DEBUG. Forward pass to pick top‐predicted class
+    with torch.no_grad():
+        logits = augmentedVGG16(input_tensor)     # → (1, 1000)
+        probs = torch.softmax(logits, dim=1)
+        top_prob, top_catid = torch.max(probs, dim=1)
+        target_class = top_catid.item()
+        print(f"Target class = {target_class}  (prob={top_prob.item():.4f})")
 
     ### 5. Visualize & save the heatmap overlay to disk
     visualize_and_save_lrp(orig_pil, attributions, out_path=OUTPUT_HEATMAP_PATH)
