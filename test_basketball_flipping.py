@@ -23,52 +23,57 @@ TARGET_CLASS = 430
 
 def load_and_preprocess(image_path: str, device: torch.device):
     """
-    Load an image from disk, resize→center‐crop→tensor→normalize for VGG16.
-    Returns (preprocessed_tensor, original_PIL).
+    Load an image, crop it exactly to 224×224 for VGG16, then normalize.
+    Returns (preprocessed_tensor, cropped_PIL_image).
     """
-    preprocess = transforms.Compose([
+    # 1) Crop to 224×224 so we have a PIL that's the same size as our heatmap
+    crop = transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
+    ])
+    img = Image.open(image_path).convert('RGB')
+    img_cropped = crop(img)  # now exactly 224×224
+
+    # 2) Convert to tensor + normalize
+    normalize = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225]),
     ])
-    img = Image.open(image_path).convert('RGB')
-    tensor = preprocess(img).unsqueeze(0).to(device)  # shape: (1,3,224,224)
-    return tensor, img
+    tensor = normalize(img_cropped).unsqueeze(0).to(device)  # (1,3,224,224)
 
+    return tensor, img_cropped
 
 def visualize_and_save_lrp(orig_pil: Image.Image,
                            attribution_tensor: torch.Tensor,
                            out_path: str = OUTPUT_HEATMAP_PATH):
     """
-    Create a heatmap overlay of LRP attributions onto the original image,
-    then save to 'out_path'.
+    Overlay a 224×224 heatmap onto a 224×224 PIL, disable interpolation/aspect changes,
+    and save to disk.
     """
-    # attribution_tensor: (1, 3, 224, 224)
-    attr = attribution_tensor.squeeze(0).cpu().detach().numpy()  # → (3, 224, 224)
-    pos = np.clip(attr, a_min=0, a_max=None)
-    heatmap = pos.sum(axis=0) ## only pos contributions for visualization
-
+    # 1) Build the heatmap array
+    attr = attribution_tensor.squeeze(0).cpu().detach().numpy()  # (3,224,224)
+    heatmap = np.abs(attr).sum(axis=0)                          # (224,224)
     heatmap -= heatmap.min()
     if heatmap.max() != 0:
         heatmap /= heatmap.max()
 
-    # Resize original PIL to 224×224 if needed
-    orig_resized = orig_pil.resize((224, 224))
-    orig_array = np.array(orig_resized).astype(np.float32) / 255.0
+    # 2) Convert the already‐cropped PIL (224×224) to array [0..1]
+    orig_array = np.array(orig_pil).astype(np.float32) / 255.0  # shape (224,224,3)
 
-    # Plot and save (no plt.show)
+    # 3) Plot with matching shapes, no interpolation, equal aspect
     fig, ax = plt.subplots(figsize=(6, 6))
-    ax.imshow(orig_array)
-    ax.imshow(heatmap, cmap='jet', alpha=0.4)
+    ax.imshow(orig_array, interpolation='none', aspect='equal')
+    ax.imshow(heatmap, cmap='jet', alpha=0.4,
+              interpolation='none', aspect='equal',
+              vmin=0, vmax=1)
     ax.axis('off')
-    plt.title("LRP Heatmap Overlay (target = basketball)")
+    plt.title("LRP Heatmap Overlay")
 
+    # 4) Save to file
     fig.savefig(out_path, bbox_inches='tight', pad_inches=0)
     plt.close(fig)
     print(f"LRP heatmap overlay saved to '{out_path}'.")
-
 
 if __name__ == "__main__":
     ###DEBUG
