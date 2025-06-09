@@ -1,16 +1,19 @@
 import torch
 import numpy as np
 import NCP
+from torch import nn
 from NCP import AugmentedVGG16, ablate_subspace_matrix
 
 from torchvision import transforms
 from PIL import Image 
 import matplotlib.pyplot as plt
 from captum.attr import LRP
+from captum.attr._utils.lrp_rules import Alpha1_Beta0_Rule, PropagationRule
+
 
 ### vars
 SUBSPACE_DIMS = [128, 128, 128, 128]
-IRRELEVANT_SUBSPACES = [3]  # test: ablate "ball" subspace. Should be easy to see in LRP heatmap
+IRRELEVANT_SUBSPACES = []  # test: ablate "ball" subspace. Should be easy to see in LRP heatmap
 U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_tensor.pt'
 IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa-basketball-img3.jpg'
 OUTPUT_HEATMAP_PATH = 'lrp_overlay.png'
@@ -85,7 +88,7 @@ if __name__ == "__main__":
     ### 2.b set propagation rule https://captum.ai/api/lrp.html
     for module in augmentedVGG16.modules():
         if isinstance(module, (nn.Conv2d, nn.Linear)):
-            module.rule = Alpha1_Beta0_Rule()
+            module.rule = Alpha1_Beta0_Rule(set_bias_to_zero=True)
 
     ### 3. Load and preprocess the input image
     input_tensor, orig_pil = load_and_preprocess(IMAGE_FILEPATH, device=device)
