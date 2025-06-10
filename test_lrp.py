@@ -158,10 +158,10 @@ if __name__ == "__main__":
 
     # Try different LRP rules for comparison
     lrp_rules = [
-        ('epsilon', 1e-6),      # epsilon rule - often good baseline
-        ('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
+        #('epsilon', 1e-6),      # epsilon rule - often good baseline
+        #('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
         ('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
-        ('gamma', 0.25),        # gamma rule
+        #('gamma', 0.25),        # gamma rule
     ]
     
     for rule_name, param in lrp_rules:
