@@ -50,6 +50,11 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     """
     Save a standalone LRP heatmap image (no overlay or title).
     """
+    ## debug:
+    if attr.ndim != 3 or attr.shape[0] != 3:
+        raise ValueError(f"Expected attribution_tensor of shape (1, 3, 224, 224), got {attr.shape}")
+
+
     attr = attribution_tensor.squeeze(0).cpu().detach().numpy()  # → (3, 224, 224)
     heatmap = attr.sum(axis=0)  # Sum over channels
     heatmap = np.maximum(heatmap, 0)
@@ -76,6 +81,7 @@ if __name__ == "__main__":
     augmentedVGG16.eval()
 
     register_hooks(augmentedVGG16)
+    assert hasattr(list(augmentedVGG16.children())[0][0], "input"), "Forward hook registration failed"
 
     ### 3. Load and preprocess the input image
     input_tensor, orig_pil = load_and_preprocess(IMAGE_FILEPATH, device=device)
