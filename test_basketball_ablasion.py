@@ -39,11 +39,13 @@ def load_and_preprocess(image_path: str, device: torch.device):
     return tensor, img
 ### hooks for augmented vgg16
 def register_hooks(model):
+    def save_input_output(mod, inp, out):
+        mod.input = inp[0]
+        mod.output = out
+
     for module in model.modules():
-        def save_input_output(mod, inp, out):
-            mod.input = inp[0]
-            mod.output = out
         module.register_forward_hook(save_input_output)
+
 
 def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
                            out_path: str = OUTPUT_HEATMAP_PATH):
@@ -81,17 +83,17 @@ if __name__ == "__main__":
     augmentedVGG16.eval()
 
     register_hooks(augmentedVGG16)
-    assert any(hasattr(m, "input") for m in augmentedVGG16.modules()), "Forward hook registration failed"
-
 
     ### 3. Load and preprocess the input image
-    input_tensor, orig_pil = load_and_preprocess(IMAGE_FILEPATH, device=device)
+    input_tensor, _ = load_and_preprocess(IMAGE_FILEPATH, device=device)
 
     with torch.no_grad():
         output = augmentedVGG16(input_tensor)
         R = torch.zeros_like(output)
         R[0, TARGET_CLASS] = output[0, TARGET_CLASS]
 
+    assert any(hasattr(m, "input") for m in augmentedVGG16.modules()), "Forward hook registration failed"
+    
     print("output relevance: ", R.sum())
     ### 4. Compute LRP attributions for the fixed TARGET_CLASS
     # Flatten model into an ordered list
