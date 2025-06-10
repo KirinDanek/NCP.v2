@@ -56,7 +56,7 @@ def visualize_and_save_lrp(orig_pil: Image.Image,
     attr = attribution_tensor.squeeze(0).cpu().detach().numpy()  # → (3, 224, 224)
     #pos = np.clip(attr, a_min=0, a_max=None)
     #heatmap = pos.sum(axis=0) ## only pos contributions for visualization
-    heatmap = attr.sum(attr, axis=0)
+    heatmap = attr.sum(axis=0)
     heatmap = np.maximum(heatmap, 0)
     heatmap /= heatmap.max()  # normalize to [0, 1]
 
