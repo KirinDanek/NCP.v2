@@ -81,7 +81,8 @@ if __name__ == "__main__":
     augmentedVGG16.eval()
 
     register_hooks(augmentedVGG16)
-    assert hasattr(list(augmentedVGG16.children())[0][0], "input"), "Forward hook registration failed"
+    assert any(hasattr(m, "input") for m in augmentedVGG16.modules()), "Forward hook registration failed"
+
 
     ### 3. Load and preprocess the input image
     input_tensor, orig_pil = load_and_preprocess(IMAGE_FILEPATH, device=device)
