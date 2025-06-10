@@ -67,6 +67,10 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
         raise ValueError("Heatmap contains NaNs or infs.")
 
     heatmap /= max_val
+
+    arr = R.squeeze(0).cpu().detach().numpy()
+    print("Relevance stats — min:", arr.min(), "max:", arr.max(), "mean:", arr.mean(), "nonzero count:", np.count_nonzero(arr))
+
     plt.imsave(out_path, heatmap, cmap='hot')
     print(f"LRP heatmap saved to '{out_path}'.")
 
