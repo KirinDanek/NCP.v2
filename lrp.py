@@ -45,8 +45,8 @@ def Linear(module, R, lrp_var=None, param=None):
 
         X = module.input + 1e-9
 
-        ZA = torch.nn.functional.linear(X, VP)
-        ZB = torch.nn.functional.linear(X, VN)
+        ZA = torch.nn.functional.linear(X, VP) + 1e-9
+        ZB = torch.nn.functional.linear(X, VN) + 1e-9
 
         SA = alpha * R / ZA
         SB = beta * R / ZB
@@ -116,9 +116,9 @@ def Convolution(module, R, lrp_var=None, param=None):
         X = module.input + 1e-9
 
         ZA = torch.nn.functional.conv2d(X, VP, stride=module.stride, padding=module.padding,
-                                       dilation=module.dilation, groups=module.groups)
+                                       dilation=module.dilation, groups=module.groups) + 1e-9
         ZB = torch.nn.functional.conv2d(X, VN, stride=module.stride, padding=module.padding,
-                                        dilation=module.dilation, groups=module.groups)
+                                        dilation=module.dilation, groups=module.groups) + 1e-9
 
         SA = alpha * R / ZA
         SB = beta * R / ZB
