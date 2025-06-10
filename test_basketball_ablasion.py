@@ -16,7 +16,7 @@ SUBSPACE_DIMS = [128, 128, 128, 128]
 IRRELEVANT_SUBSPACES = []  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
 U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_tensor.pt'
 IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa-basketball-img3.jpg'
-OUTPUT_HEATMAP_PATH = 'lrp_overlay.png'
+OUTPUT_HEATMAP_PATH = 'lrp_heatmap.png'
 
 # "basketball" in ImageNet is class index 430 (zero‐indexed)
 TARGET_CLASS = 430
@@ -45,35 +45,20 @@ def register_hooks(model):
             mod.output = out
         module.register_forward_hook(save_input_output)
 
-def visualize_and_save_lrp(orig_pil: Image.Image,
-                           attribution_tensor: torch.Tensor,
+def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
                            out_path: str = OUTPUT_HEATMAP_PATH):
     """
-    Create a heatmap overlay of LRP attributions onto the original image,
-    then save to 'out_path'.
+    Save a standalone LRP heatmap image (no overlay or title).
     """
-    # attribution_tensor: (1, 3, 224, 224)
     attr = attribution_tensor.squeeze(0).cpu().detach().numpy()  # → (3, 224, 224)
-    #pos = np.clip(attr, a_min=0, a_max=None)
-    #heatmap = pos.sum(axis=0) ## only pos contributions for visualization
-    heatmap = attr.sum(axis=0)
+    heatmap = attr.sum(axis=0)  # Sum over channels
     heatmap = np.maximum(heatmap, 0)
-    heatmap /= heatmap.max()  # normalize to [0, 1]
+    heatmap /= heatmap.max()  # Normalize to [0, 1]
 
-    # Resize original PIL to 224×224 if needed
-    orig_resized = orig_pil.resize((224, 224))
-    orig_array = np.array(orig_resized).astype(np.float32) / 255.0
+    # Plot and save
+    plt.imsave(out_path, heatmap, cmap='hot')
+    print(f"LRP heatmap saved to '{out_path}'.")
 
-    # Plot and save (no plt.show)
-    fig, ax = plt.subplots(figsize=(6, 6))
-    ax.imshow(orig_array)
-    ax.imshow(heatmap, cmap='jet', alpha=0.4)
-    ax.axis('off')
-    plt.title("LRP Heatmap Overlay (target = basketball)")
-
-    fig.savefig(out_path, bbox_inches='tight', pad_inches=0)
-    plt.close(fig)
-    print(f"LRP heatmap overlay saved to '{out_path}'.")
 
 
 if __name__ == "__main__":
@@ -100,6 +85,7 @@ if __name__ == "__main__":
         R = torch.zeros_like(output)
         R[0, TARGET_CLASS] = output[0, TARGET_CLASS]
 
+    print("output relevance: ", R.sum())
     ### 4. Compute LRP attributions for the fixed TARGET_CLASS
     # Flatten model into an ordered list
     modules = list(augmentedVGG16.before) + [augmentedVGG16.encode, augmentedVGG16.decode] + list(augmentedVGG16.after) + list(augmentedVGG16.classifier)
@@ -107,6 +93,6 @@ if __name__ == "__main__":
     # Propagate in reverse order
     for module in reversed(modules):
         R = lrp(module, R, lrp_var='alphabeta', param=1.0)  # alpha=1, beta=0 
-
+    print("input relevance: ", R.sum())
     ### 5. Visualize & save the heatmap overlay to disk
-    visualize_and_save_lrp(orig_pil, R, out_path=OUTPUT_HEATMAP_PATH)
+    visualize_and_save_lrp(R, out_path=OUTPUT_HEATMAP_PATH)
