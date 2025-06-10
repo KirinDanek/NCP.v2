@@ -106,7 +106,7 @@ if __name__ == "__main__":
 
     # Propagate in reverse order
     for module in reversed(modules):
-        attributions = lrp(module, R, lrp_var='alphabeta', param=1.0)  # alpha=1, beta=0 
+        R = lrp(module, R, lrp_var='alphabeta', param=1.0)  # alpha=1, beta=0 
 
     ### 5. Visualize & save the heatmap overlay to disk
-    visualize_and_save_lrp(orig_pil, attributions, out_path=OUTPUT_HEATMAP_PATH)
+    visualize_and_save_lrp(orig_pil, R, out_path=OUTPUT_HEATMAP_PATH)
