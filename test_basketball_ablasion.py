@@ -52,12 +52,11 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     """
     Save a standalone LRP heatmap image (no overlay or title).
     """
-    ## debug:
-    if attr.ndim != 3 or attr.shape[0] != 3:
-        raise ValueError(f"Expected attribution_tensor of shape (1, 3, 224, 224), got {attr.shape}")
-
 
     attr = attribution_tensor.squeeze(0).cpu().detach().numpy()  # → (3, 224, 224)
+    ## debug:
+    if attr.shape != (3, 224, 224):
+        raise ValueError(f"Expected attribution_tensor of shape (1, 3, 224, 224), got {attr.shape}")
     heatmap = attr.sum(axis=0)  # Sum over channels
     heatmap = np.maximum(heatmap, 0)
     heatmap /= heatmap.max()  # Normalize to [0, 1]
@@ -93,7 +92,7 @@ if __name__ == "__main__":
         R[0, TARGET_CLASS] = output[0, TARGET_CLASS]
 
     assert any(hasattr(m, "input") for m in augmentedVGG16.modules()), "Forward hook registration failed"
-    
+
     print("output relevance: ", R.sum())
     ### 4. Compute LRP attributions for the fixed TARGET_CLASS
     # Flatten model into an ordered list
