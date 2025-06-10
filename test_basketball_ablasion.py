@@ -50,34 +50,79 @@ def register_hooks(model):
 def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
                            out_path: str = OUTPUT_HEATMAP_PATH):
     """
-    Save a standalone LRP heatmap image (no overlay or title).
+    Save LRP heatmap with improved processing for better visualization.
     """
+    # Move to CPU and convert to numpy
     attr = attribution_tensor.squeeze(0).cpu().detach().numpy()  # → (3, 224, 224)
-
+    
     if attr.shape != (3, 224, 224):
         raise ValueError(f"Expected attribution_tensor of shape (1, 3, 224, 224), got {attr.shape}")
-
+    
+    # Sum across RGB channels to get spatial heatmap
     heatmap = attr.sum(axis=0)  # → (224, 224)
-    heatmap = np.maximum(heatmap, 0)
-
-    max_val = heatmap.max()
-    if max_val == 0:
-        raise ValueError("Heatmap is all zeros, cannot normalize.")
-    if not np.isfinite(heatmap).all():
-        raise ValueError("Heatmap contains NaNs or infs.")
-
-    heatmap /= max_val
-
-    arr = R.squeeze(0).cpu().detach().numpy()
-    print("Relevance stats — min:", arr.min(), "max:", arr.max(), "mean:", arr.mean(), "nonzero count:", np.count_nonzero(arr))
-
-    plt.imsave(out_path, heatmap, cmap='hot')
-    print(f"LRP heatmap saved to '{out_path}'.")
+    
+    print(f"Raw heatmap stats — min: {heatmap.min():.6f}, max: {heatmap.max():.6f}, mean: {heatmap.mean():.6f}")
+    
+    # Method 1: Positive relevance only (your original approach)
+    heatmap_pos = np.maximum(heatmap, 0)
+    max_val_pos = heatmap_pos.max()
+    
+    if max_val_pos > 0:
+        heatmap_pos_norm = heatmap_pos / max_val_pos
+        plt.figure(figsize=(8, 8))
+        plt.imshow(heatmap_pos_norm, cmap='hot')
+        plt.axis('off')
+        plt.tight_layout()
+        plt.savefig(out_path.replace('.png', '_positive_only.png'), bbox_inches='tight', pad_inches=0)
+        plt.close()
+        print(f"Positive-only heatmap saved to '{out_path.replace('.png', '_positive_only.png')}'")
+    
+    # Method 2: Absolute values (recommended)
+    heatmap_abs = np.abs(heatmap)
+    max_val_abs = heatmap_abs.max()
+    
+    if max_val_abs > 0:
+        heatmap_abs_norm = heatmap_abs / max_val_abs
+        plt.figure(figsize=(8, 8))
+        plt.imshow(heatmap_abs_norm, cmap='hot')
+        plt.axis('off')
+        plt.tight_layout()
+        plt.savefig(out_path.replace('.png', '_absolute.png'), bbox_inches='tight', pad_inches=0)
+        plt.close()
+        print(f"Absolute value heatmap saved to '{out_path.replace('.png', '_absolute.png')}'")
+    
+    # Method 3: Centered around zero with diverging colormap
+    # This shows both positive (red) and negative (blue) contributions
+    heatmap_centered = heatmap
+    max_abs_val = max(abs(heatmap_centered.min()), abs(heatmap_centered.max()))
+    
+    if max_abs_val > 0:
+        plt.figure(figsize=(8, 8))
+        plt.imshow(heatmap_centered, cmap='RdBu_r', vmin=-max_abs_val, vmax=max_abs_val)
+        plt.axis('off')
+        plt.tight_layout()
+        plt.savefig(out_path.replace('.png', '_centered.png'), bbox_inches='tight', pad_inches=0)
+        plt.close()
+        print(f"Centered heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
+    
+    # Method 4: Percentile-based normalization (often works best)
+    # This handles outliers better
+    p99 = np.percentile(np.abs(heatmap), 99)
+    heatmap_clipped = np.clip(np.abs(heatmap), 0, p99)
+    heatmap_norm = heatmap_clipped / p99 if p99 > 0 else heatmap_clipped
+    
+    plt.figure(figsize=(8, 8))
+    plt.imshow(heatmap_norm, cmap='hot')
+    plt.axis('off')
+    plt.tight_layout()
+    plt.savefig(out_path, bbox_inches='tight', pad_inches=0)
+    plt.close()
+    print(f"Percentile-normalized heatmap saved to '{out_path}'")
 
 
 
 if __name__ == "__main__":
-    print("cuda: ", )
+    print("cuda: ", torch.cuda.is_available())
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     ### 1. Load tensor U, ablate and move to GPU
@@ -100,21 +145,42 @@ if __name__ == "__main__":
         R = torch.zeros_like(output)
         R[0, TARGET_CLASS] = output[0, TARGET_CLASS]
 
-    #debug
+    # Debug info
     assert any(hasattr(m, "input") for m in augmentedVGG16.modules()), "Forward hook registration failed"
     print("Encode weight NaNs:", torch.isnan(augmentedVGG16.encode.weight).any().item())
     print("Decode weight NaNs:", torch.isnan(augmentedVGG16.decode.weight).any().item())
+    print("Initial output relevance:", R.sum())
 
-
-    print("output relevance: ", R.sum())
     ### 4. Compute LRP attributions for the fixed TARGET_CLASS
     # Flatten model into an ordered list
     modules = list(augmentedVGG16.before) + [augmentedVGG16.encode, augmentedVGG16.decode] + list(augmentedVGG16.after) + list(augmentedVGG16.classifier)
 
-    # Propagate in reverse order
-    for module in reversed(modules):
-        R = lrp(module, R, lrp_var='alphabeta', param=1.0)  # alpha=1, beta=0 
-        print(f"After {module.__class__.__name__}, relevance sum: {R.sum().item()}, has NaN: {torch.isnan(R).any().item()}")
-    print("input relevance: ", R.sum())
-    ### 5. Visualize & save the heatmap overlay to disk
-    visualize_and_save_lrp(R, out_path=OUTPUT_HEATMAP_PATH)
+    # Try different LRP rules for comparison
+    lrp_rules = [
+        #('epsilon', 1e-6),      # epsilon rule - often good baseline
+        #('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
+        ('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
+        #('gamma', 0.25),        # gamma rule
+    ]
+    
+    for rule_name, param in lrp_rules:
+        print(f"\n=== LRP rule: {rule_name} with param {param} ===")
+        R_test = R.clone()
+        
+        # Propagate in reverse order
+        for module in reversed(modules):
+            R_test = lrp(module, R_test, lrp_var=rule_name, param=param)
+            
+            # Check for issues during propagation
+            if torch.isnan(R_test).any():
+                print(f"ERROR: NaN detected after {module.__class__.__name__}")
+                break
+            if torch.isinf(R_test).any():
+                print(f"ERROR: Inf detected after {module.__class__.__name__}")
+                break
+                
+        print(f"Final input relevance sum: {R_test.sum().item():.4f}")
+        
+        # Save heatmap for this rule
+        rule_output_path = OUTPUT_HEATMAP_PATH.replace('.png', f'_{rule_name}_{param}.png')
+        visualize_and_save_lrp(R_test, out_path=rule_output_path)

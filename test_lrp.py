@@ -165,7 +165,7 @@ if __name__ == "__main__":
     ]
     
     for rule_name, param in lrp_rules:
-        print(f"\n=== Testing LRP rule: {rule_name} with param {param} ===")
+        print(f"\n=== LRP rule: {rule_name} with param {param} ===")
         R_test = R.clone()
         
         # Propagate in reverse order
@@ -185,7 +185,3 @@ if __name__ == "__main__":
         # Save heatmap for this rule
         rule_output_path = OUTPUT_HEATMAP_PATH.replace('.png', f'_{rule_name}_{param}.png')
         visualize_and_save_lrp(R_test, out_path=rule_output_path)
-        
-        # If this is your original rule, also save with original name
-        if rule_name == 'alphabeta' and param == 1.0:
-            visualize_and_save_lrp(R_test, out_path=OUTPUT_HEATMAP_PATH)
