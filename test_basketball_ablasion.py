@@ -52,16 +52,21 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     """
     Save a standalone LRP heatmap image (no overlay or title).
     """
-
     attr = attribution_tensor.squeeze(0).cpu().detach().numpy()  # → (3, 224, 224)
-    ## debug:
+
     if attr.shape != (3, 224, 224):
         raise ValueError(f"Expected attribution_tensor of shape (1, 3, 224, 224), got {attr.shape}")
-    heatmap = attr.sum(axis=0)  # Sum over channels
-    heatmap = np.maximum(heatmap, 0)
-    heatmap /= heatmap.max()  # Normalize to [0, 1]
 
-    # Plot and save
+    heatmap = attr.sum(axis=0)  # → (224, 224)
+    heatmap = np.maximum(heatmap, 0)
+
+    max_val = heatmap.max()
+    if max_val == 0:
+        raise ValueError("Heatmap is all zeros, cannot normalize.")
+    if not np.isfinite(heatmap).all():
+        raise ValueError("Heatmap contains NaNs or infs.")
+
+    heatmap /= max_val
     plt.imsave(out_path, heatmap, cmap='hot')
     print(f"LRP heatmap saved to '{out_path}'.")
 
