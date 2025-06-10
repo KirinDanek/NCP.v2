@@ -96,7 +96,11 @@ if __name__ == "__main__":
         R = torch.zeros_like(output)
         R[0, TARGET_CLASS] = output[0, TARGET_CLASS]
 
+    #debug
     assert any(hasattr(m, "input") for m in augmentedVGG16.modules()), "Forward hook registration failed"
+    print("Encode weight NaNs:", torch.isnan(augmentedVGG16.encode.weight).any().item())
+    print("Decode weight NaNs:", torch.isnan(augmentedVGG16.decode.weight).any().item())
+
 
     print("output relevance: ", R.sum())
     ### 4. Compute LRP attributions for the fixed TARGET_CLASS
@@ -106,6 +110,7 @@ if __name__ == "__main__":
     # Propagate in reverse order
     for module in reversed(modules):
         R = lrp(module, R, lrp_var='alphabeta', param=1.0)  # alpha=1, beta=0 
+        print(f"After {module.__class__.__name__}, relevance sum: {R.sum().item()}, has NaN: {torch.isnan(R).any().item()}")
     print("input relevance: ", R.sum())
     ### 5. Visualize & save the heatmap overlay to disk
     visualize_and_save_lrp(R, out_path=OUTPUT_HEATMAP_PATH)
