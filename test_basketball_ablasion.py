@@ -63,47 +63,6 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     
     print(f"Raw heatmap stats — min: {heatmap.min():.6f}, max: {heatmap.max():.6f}, mean: {heatmap.mean():.6f}")
     
-    # Method 1: Positive relevance only (your original approach)
-    heatmap_pos = np.maximum(heatmap, 0)
-    max_val_pos = heatmap_pos.max()
-    
-    if max_val_pos > 0:
-        heatmap_pos_norm = heatmap_pos / max_val_pos
-        plt.figure(figsize=(8, 8))
-        plt.imshow(heatmap_pos_norm, cmap='hot')
-        plt.axis('off')
-        plt.tight_layout()
-        plt.savefig(out_path.replace('.png', '_positive_only.png'), bbox_inches='tight', pad_inches=0)
-        plt.close()
-        print(f"Positive-only heatmap saved to '{out_path.replace('.png', '_positive_only.png')}'")
-    
-    # Method 2: Absolute values (recommended)
-    heatmap_abs = np.abs(heatmap)
-    max_val_abs = heatmap_abs.max()
-    
-    if max_val_abs > 0:
-        heatmap_abs_norm = heatmap_abs / max_val_abs
-        plt.figure(figsize=(8, 8))
-        plt.imshow(heatmap_abs_norm, cmap='hot')
-        plt.axis('off')
-        plt.tight_layout()
-        plt.savefig(out_path.replace('.png', '_absolute.png'), bbox_inches='tight', pad_inches=0)
-        plt.close()
-        print(f"Absolute value heatmap saved to '{out_path.replace('.png', '_absolute.png')}'")
-    
-    # Method 3: Centered around zero with diverging colormap
-    # This shows both positive (red) and negative (blue) contributions
-    heatmap_centered = heatmap
-    max_abs_val = max(abs(heatmap_centered.min()), abs(heatmap_centered.max()))
-    
-    if max_abs_val > 0:
-        plt.figure(figsize=(8, 8))
-        plt.imshow(heatmap_centered, cmap='RdBu_r', vmin=-max_abs_val, vmax=max_abs_val)
-        plt.axis('off')
-        plt.tight_layout()
-        plt.savefig(out_path.replace('.png', '_centered.png'), bbox_inches='tight', pad_inches=0)
-        plt.close()
-        print(f"Centered heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
     
     # Method 4: Percentile-based normalization (often works best)
     # This handles outliers better
@@ -118,7 +77,6 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     plt.savefig(out_path, bbox_inches='tight', pad_inches=0)
     plt.close()
     print(f"Percentile-normalized heatmap saved to '{out_path}'")
-
 
 
 if __name__ == "__main__":
