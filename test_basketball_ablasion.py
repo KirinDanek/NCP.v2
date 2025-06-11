@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 ### vars
 SUBSPACE_DIMS = [128, 128, 128, 128]
-IRRELEVANT_SUBSPACES = []  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
+IRRELEVANT_SUBSPACES = [3]  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
 U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_tensor.pt'
 IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa-basketball-img3.jpg'
 OUTPUT_HEATMAP_PATH = 'lrp_heatmap.png'
@@ -116,8 +116,8 @@ if __name__ == "__main__":
     # Try different LRP rules for comparison
     lrp_rules = [
         #('epsilon', 1e-6),      # epsilon rule - often good baseline
-        #('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
-        ('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
+        ('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
+        ('alphabeta', 0.3),     # alpha=1, beta=0 (your original)
         #('gamma', 0.25),        # gamma rule
     ]
     
