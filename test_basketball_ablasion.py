@@ -1,8 +1,8 @@
 import torch
 import numpy as np
-import NCP
+import AugmentedVGG16
 from torch import nn
-from NCP import AugmentedVGG16, ablate_subspace_matrix
+from AugmentedVGG16 import AugmentedVGG16, ablate_subspace_matrix
 from lrp import *
 
 from torchvision import transforms

@@ -1,4 +1,4 @@
-## source: https://github.com/seulkiyeom/LRP_Pruning_toy_example/blob/master/modules/lrp.py 
+## adapted from: https://github.com/seulkiyeom/LRP_Pruning_toy_example/blob/master/modules/lrp.py 
 
 import torch
 import torch.nn as nn
@@ -55,7 +55,7 @@ def Linear(module, R, lrp_var=None, param=None):
 
         return Rn
 
-    elif lrp_var.lower() == 'z+':
+    elif lrp_var.lower() == 'z+' or lrp_var.lower() == 'z' or lrp_var.lower() == 'epsilon':
         V = module.weight.clamp(min=0.0)
 
         Z = torch.nn.functional.linear(module.input, V) + 1e-9
@@ -132,7 +132,7 @@ def Convolution(module, R, lrp_var=None, param=None):
 
         return Rn
 
-    elif lrp_var.lower() == 'z+':
+    elif lrp_var.lower() == 'z+' or lrp_var.lower() == 'z' or lrp_var.lower() == 'epsilon':
         V = module.weight.clamp(min=0.0)
         Z = torch.nn.functional.conv2d(module.input, V, stride=module.stride, padding=module.padding,
                                        dilation=module.dilation, groups=module.groups) + 1e-9
