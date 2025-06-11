@@ -66,12 +66,13 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     
     # Method 4: Percentile-based normalization (often works best)
     # This handles outliers better
-    p99 = np.percentile(np.abs(heatmap), 99)
-    heatmap_clipped = np.clip(np.abs(heatmap), 0, p99)
-    heatmap_norm = heatmap_clipped / p99 if p99 > 0 else heatmap_clipped
+    #p99 = np.percentile(np.abs(heatmap), 99)
+    #heatmap_clipped = np.clip(np.abs(heatmap), 0, p99)
+    #heatmap_norm = heatmap_clipped / p99 if p99 > 0 else heatmap_clipped
     
     plt.figure(figsize=(8, 8))
-    plt.imshow(heatmap_norm, cmap='hot')
+    #plt.imshow(heatmap_norm, cmap='hot')
+    plt.imshow(heatmap, cmap='RdBu_r')
     plt.axis('off')
     plt.tight_layout()
     plt.savefig(out_path, bbox_inches='tight', pad_inches=0)
@@ -116,8 +117,8 @@ if __name__ == "__main__":
     # Try different LRP rules for comparison
     lrp_rules = [
         #('epsilon', 1e-6),      # epsilon rule - often good baseline
-        ('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
-        ('alphabeta', 0.3),     # alpha=1, beta=0 (your original)
+        #('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
+        ('alphabeta', 1),     # alpha=1, beta=0 (your original)
         #('gamma', 0.25),        # gamma rule
     ]
     
