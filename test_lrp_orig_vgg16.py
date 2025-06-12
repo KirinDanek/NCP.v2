@@ -35,6 +35,15 @@ def load_and_preprocess(image_path: str, device: torch.device):
     tensor = preprocess(img).unsqueeze(0).to(device)  # shape: (1,3,224,224)
     return tensor, img
 
+### hooks for augmented vgg16
+def register_hooks(model):
+    def save_input_output(mod, inp, out):
+        mod.input = inp[0]
+        mod.output = out
+
+    for module in model.modules():
+        module.register_forward_hook(save_input_output)
+
 def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
                            out_path: str = OUTPUT_HEATMAP_PATH):
     """
@@ -93,6 +102,8 @@ if __name__ == "__main__":
     ### 2. Build the model, send to GPU, set eval()
     model = vgg16(pretrained=True).to(device)
     model.eval()
+
+    register_hooks(model)
 
     ### 3. Load and preprocess the input image
     input_tensor, _ = load_and_preprocess(IMAGE_FILEPATH, device=device)
