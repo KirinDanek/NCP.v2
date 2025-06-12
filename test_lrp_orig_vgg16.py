@@ -113,9 +113,12 @@ if __name__ == "__main__":
         R = torch.zeros_like(output)
         R[0, TARGET_CLASS] = output[0, TARGET_CLASS]
 
+    assert any(hasattr(m, "input") for m in model.modules()), "Forward hook registration failed"
+    print("Initial output relevance:", R.sum())
+
     ### 4. Compute LRP attributions for the fixed TARGET_CLASS
     # Flatten model into an ordered list
-    modules = list(model.features) + [model.avgpool, nn.Flatten()] + list(model.classifier)
+    modules = list(model.features) + list(model.classifier)
 
     # Try different LRP rules for comparison
     lrp_rules = [
