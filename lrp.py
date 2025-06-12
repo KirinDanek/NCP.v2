@@ -56,9 +56,10 @@ def Linear(module, R, lrp_var=None, param=None):
         return Rn
 
     elif lrp_var.lower() == 'z+' or lrp_var.lower() == 'z' or lrp_var.lower() == 'epsilon':
+        epsilon = param
         V = module.weight.clamp(min=0.0)
 
-        Z = torch.nn.functional.linear(module.input, V) + 1e-9
+        Z = torch.nn.functional.linear(module.input, V) + epsilon
         S = R / Z
         C = torch.mm(S, V)
         Rn = module.input * C
@@ -133,9 +134,10 @@ def Convolution(module, R, lrp_var=None, param=None):
         return Rn
 
     elif lrp_var.lower() == 'z+' or lrp_var.lower() == 'z' or lrp_var.lower() == 'epsilon':
+        epsilon = param
         V = module.weight.clamp(min=0.0)
         Z = torch.nn.functional.conv2d(module.input, V, stride=module.stride, padding=module.padding,
-                                       dilation=module.dilation, groups=module.groups) + 1e-9
+                                       dilation=module.dilation, groups=module.groups) + epsilon
         S = R / Z
         if module.stride[0] > 1:
             C = torch.nn.functional.conv_transpose2d(S, V, stride=module.stride, padding= module.padding, output_padding=1,
