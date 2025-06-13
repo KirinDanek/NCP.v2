@@ -133,30 +133,28 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     plt.close()
     print(f"Percentile-normalized heatmap saved to '{out_path.replace('.png', '_pbn.png')}'")
 
-def get_augmented_vgg16_lrp_param(module_idx):
+# Indices refer to enumerate(reversed(modules))  →  output-side → input-side
+def get_augmented_vgg16_lrp_param(module_idx: int) -> float:
     """
-    - Last layers: Linear layers (classifier) - indices 0-6
-    - Conv5 block: 512->512 convs (should be 0.01) - indices 7-11  
-    - Augmented: 1x1 convs (512->512, kernel=1x1) - indices 12-13
-    - Conv4 block: 256->512, 512->512 convs - indices 14-19
-    - Conv3 block: 128->256, 256->256 convs - indices 20-25
-    - Conv2 block: 64->128, 128->128 convs - indices 26-28
-    - Conv1 block: 3->64, 64->64 convs - indices 29-32
+    Returns the γ value for LRP-γ according to the heuristic:
+
+        • 0.50  → first two conv blocks   (Conv1 & Conv2)
+        • 0.25  → third  conv block       (Conv3)
+        • 0.10  → fourth conv block       (Conv4)  **and** the 1×1 augmented layers
+        • 0.00  → fifth  conv block       (Conv5)  **and** the classifier head
     """
-    
-    # Working backwards from the output (reverse iteration)
-    if module_idx <= 6:  # Classifier (Linear, Dropout, ReLU layers)
-        return 0.01
-    elif 7 <= module_idx <= 11:  # Block 5 (conv5_x layers - last layers)
-        return 0.01
-    elif 12 <= module_idx <= 19:  # Augmented layers (1x1 convs) + Block 4 (conv4_x layers)
-        return 0.1
-    elif 20 <= module_idx <= 25:  # Block 3 (conv3_x layers)
+    if module_idx <= 6:                       # classifier layers
+        return 0.0
+    elif 7 <= module_idx <= 11:               # Conv5 block
+        return 0.0
+    elif 12 <= module_idx <= 19:              # 1×1 augmented + Conv4 block
+        return 0.10
+    elif 20 <= module_idx <= 25:              # Conv3 block
         return 0.25
-    elif 26 <= module_idx <= 32:  # Block 1 & 2 (conv1_x and conv2_x layers) - first two blocks
-        return 0.5
+    elif 26 <= module_idx <= 32:              # Conv2 & Conv1 blocks
+        return 0.50
     else:
-        return 0.01  # Default
+        raise ValueError(f"Unexpected module index {module_idx}")
 
 if __name__ == "__main__":
     print("cuda: ", torch.cuda.is_available())
@@ -208,7 +206,7 @@ if __name__ == "__main__":
             for i, module in enumerate(reversed(modules)):
     
                 dynamic_param = get_augmented_vgg16_lrp_param(i)
-                print(f"Gamma heuristic module {module} with param {dynamic_param}")
+                print(f"Gamma heuristic module = {module} with gamma = {dynamic_param}")
                 R_test = lrp(module, R_test, lrp_var=rule_name, param=dynamic_param)
 
         else: 
