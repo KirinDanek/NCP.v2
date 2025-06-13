@@ -133,28 +133,28 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     plt.close()
     print(f"Percentile-normalized heatmap saved to '{out_path.replace('.png', '_pbn.png')}'")
 
-# Indices refer to enumerate(reversed(modules))  →  output-side → input-side
 def get_augmented_vgg16_lrp_param(module_idx: int) -> float:
     """
-    Returns the γ value for LRP-γ according to the heuristic:
+    γ-schedule for LRP-γ on AugmentedVGG16, counting *from the output side* as we
+    iterate through reversed(modules).
 
-        • 0.50  → first two conv blocks   (Conv1 & Conv2)
-        • 0.25  → third  conv block       (Conv3)
-        • 0.10  → fourth conv block       (Conv4)  **and** the 1×1 augmented layers
-        • 0.00  → fifth  conv block       (Conv5)  **and** the classifier head
+    ── classifier head ─────────────── 0.00
+    ── Conv5 block  ─────────────────  0.00
+    ── Augmented 1×1 + Conv4 block ─  0.10
+    ── Conv3 block  ─────────────────  0.25
+    ── Conv2 + Conv1 blocks ─────────  0.50  (all remaining layers)
     """
-    if module_idx <= 6:                       # classifier layers
+    if module_idx <= 6:                         # classifier layers
         return 0.0
-    elif 7 <= module_idx <= 11:               # Conv5 block
+    elif 7 <= module_idx <= 11:                 # Conv5
         return 0.0
-    elif 12 <= module_idx <= 19:              # 1×1 augmented + Conv4 block
+    elif 12 <= module_idx <= 19:                # 1×1 augmented + Conv4
         return 0.10
-    elif 20 <= module_idx <= 25:              # Conv3 block
+    elif 20 <= module_idx <= 25:                # Conv3
         return 0.25
-    elif 26 <= module_idx <= 32:              # Conv2 & Conv1 blocks
+    else:                                       # Conv2, Conv1, and anything earlier
         return 0.50
-    else:
-        raise ValueError(f"Unexpected module index {module_idx}")
+
 
 if __name__ == "__main__":
     print("cuda: ", torch.cuda.is_available())
