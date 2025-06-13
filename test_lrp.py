@@ -132,8 +132,36 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     #plt.savefig(out_path, bbox_inches='tight', pad_inches=0)
     #plt.close()
     #print(f"Percentile-normalized heatmap saved to '{out_path}'")
-
-
+def get_augmented_vgg16_lrp_param(module_idx, total_modules):
+    """
+    Returns LRP parameter for AugmentedVGG16 based on module index.
+    
+    AugmentedVGG16 has the same structure as VGG16 but with 2 additional modules
+    (encode and decode) inserted after conv4_3 (which is at index 22 in original VGG16).
+    
+    Original VGG16 structure + 2 additional modules:
+    - Block 1 (indices 0-2): param 0.5
+    - Block 2 (indices 3-5): param 0.5  
+    - Block 3 (indices 6-9): param 0.25
+    - Block 4 (indices 10-22): param 0.1
+    - Augmented layers (indices 23-24): encode/decode - param 0.1
+    - Block 5 + remaining (indices 25+): param 0.01
+    - Classifier: param 0.01
+    """
+    
+    # Features section (convolutional layers)
+    if module_idx < 25:  # Before classifier
+        if module_idx <= 2:  # Block 1 (first conv block)
+            return 0.5
+        elif 3 <= module_idx <= 5:  # Block 2 (second conv block)
+            return 0.5
+        elif 6 <= module_idx <= 9:  # Block 3 (third conv block)
+            return 0.25
+        elif 10 <= module_idx <= 24:  # Block 4 + augmented layers (fourth conv block + encode/decode)
+            return 0.1
+    
+    # Classifier section and remaining layers
+    return 0.01
 
 if __name__ == "__main__":
     print("cuda: ", torch.cuda.is_available())
@@ -181,18 +209,26 @@ if __name__ == "__main__":
         print(f"\n=== LRP rule: {rule_name} with param {param} ===")
         R_test = R.clone()
         
-        # Propagate in reverse order
-        for module in reversed(modules):
+        if rule_name == 'gamma' and param == 'heuristic':
+            for i, module in enumerate(reversed(modules)):
+                forward_idx = len(modules) - 1 - i
+    
+                dynamic_param = get_augmented_vgg16_lrp_param(forward_idx, len(modules))
+                R_test = lrp(module, R_test, lrp_var=rule_name, param=dynamic_param)
+
+        else: 
+            # Propagate in reverse order
+            for module in reversed(modules):
             
-            R_test = lrp(module, R_test, lrp_var=rule_name, param=dynamic_param)
+                R_test = lrp(module, R_test, lrp_var=rule_name, param=param)
             
-            # Check for issues during propagation
-            if torch.isnan(R_test).any():
-                print(f"ERROR: NaN detected after {module.__class__.__name__}")
-                break
-            if torch.isinf(R_test).any():
-                print(f"ERROR: Inf detected after {module.__class__.__name__}")
-                break
+                # Check for issues during propagation
+                if torch.isnan(R_test).any():
+                    print(f"ERROR: NaN detected after {module.__class__.__name__}")
+                    break
+                if torch.isinf(R_test).any():
+                    print(f"ERROR: Inf detected after {module.__class__.__name__}")
+                    break
                 
         print(f"Final input relevance sum: {R_test.sum().item():.4f}")
         
