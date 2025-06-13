@@ -203,17 +203,16 @@ def Convolution(module, R, lrp_var=None, param=None):
         V_gamma = V + gamma * VP
 
         X = module.input + 1e-9
-        Z = torch.nn.functional.conv2d(X, V_gamma, stride=module.stride, 
-                                       padding=module.padding, 
-                                       output_padding=1, dilation=module.dilation,
-                                       groups=module.groups)
+        Z = torch.nn.functional.conv2d(X, V_gamma, bias=None, stride=module.stride, 
+                                       padding=module.padding, dilation=module.dilation,
+                                       groups=module.groups) + 1e-9
         S = R / Z
 
         ## handle both stride cases
         if module.stride[0] > 1:
-            C = torch.nn.functional.conv_transpose2d(S, V_gamma, stride=module.stride, padding=module.padding, 
+            C = torch.nn.functional.conv_transpose2d(S, V_gamma, bias=None, stride=module.stride, padding=module.padding, 
                                                    output_padding=1, dilation=module.dilation, groups=module.groups)
         else:
-            C = torch.nn.functional.conv_transpose2d(S, V_gamma, stride=module.stride, padding=module.padding,
+            C = torch.nn.functional.conv_transpose2d(S, V_gamma, bias=None, stride=module.stride, padding=module.padding,
                                                    dilation=module.dilation, groups=module.groups)
         return X * C
