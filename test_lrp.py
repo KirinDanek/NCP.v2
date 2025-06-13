@@ -65,27 +65,27 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     print(f"Raw heatmap stats — min: {heatmap.min():.6f}, max: {heatmap.max():.6f}, mean: {heatmap.mean():.6f}")
     
     # Method 1: Positive relevance only (your original approach)
-    heatmap_pos = np.maximum(heatmap, 0)
-    p99 = np.percentile(heatmap_pos, 99)
-    heatmap_pos = np.clip(heatmap_pos, 0, p99)
+    #heatmap_pos = np.maximum(heatmap, 0)
+    #p99 = np.percentile(heatmap_pos, 99)
+    #heatmap_pos = np.clip(heatmap_pos, 0, p99)
 
     #max_val_pos = heatmap_pos.max()
     
-    if p99 > 0:
-        heatmap_pos_norm = heatmap_pos / p99
-        plt.figure(figsize=(8, 8))
-        plt.imshow(heatmap_pos_norm, cmap='hot')
-        plt.axis('off')
-        plt.tight_layout()
-        plt.savefig(out_path.replace('.png', '_positive_only.png'), bbox_inches='tight', pad_inches=0)
-        plt.close()
-        print(f"Positive-only heatmap saved to '{out_path.replace('.png', '_positive_only.png')}'")
+    #if p99 > 0:
+    #    heatmap_pos_norm = heatmap_pos / p99
+    #    plt.figure(figsize=(8, 8))
+    #    plt.imshow(heatmap_pos_norm, cmap='hot')
+    #    plt.axis('off')
+    #    plt.tight_layout()
+    #    plt.savefig(out_path.replace('.png', '_positive_only.png'), bbox_inches='tight', pad_inches=0)
+    #    plt.close()
+    #    print(f"Positive-only heatmap saved to '{out_path.replace('.png', '_positive_only.png')}'")
     
     # Method 2: Absolute values (recommended)
     #heatmap_abs = np.abs(heatmap)
     #max_val_abs = heatmap_abs.max()
     
-   # if max_val_abs > 0:
+    #if max_val_abs > 0:
     #    heatmap_abs_norm = heatmap_abs / max_val_abs
     #    plt.figure(figsize=(8, 8))
     #    plt.imshow(heatmap_abs_norm, cmap='hot')
@@ -93,44 +93,44 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     #    plt.tight_layout()
     #    plt.savefig(out_path.replace('.png', '_absolute.png'), bbox_inches='tight', pad_inches=0)
      #   plt.close()
-     #   print(f"Absolute value heatmap saved to '{out_path.replace('.png', '_absolute.png')}'")
+    #    print(f"Absolute value heatmap saved to '{out_path.replace('.png', '_absolute.png')}'")
 
     # Method 3: Centered around zero with diverging colormap (outlier-protected)
     # This shows both positive (red) and negative (blue) contributions
-    #heatmap_centered = heatmap.copy()
+    heatmap_centered = heatmap.copy()
     # Protect against outliers using percentile clipping
-    #pos_p99 = np.percentile(heatmap_centered[heatmap_centered > 0], 99) if np.any(heatmap_centered > 0) else 0
-    #neg_p99 = np.percentile(np.abs(heatmap_centered[heatmap_centered < 0]), 99) if np.any(heatmap_centered < 0) else 0
+    pos_p99 = np.percentile(heatmap_centered[heatmap_centered > 0], 99) if np.any(heatmap_centered > 0) else 0
+    neg_p99 = np.percentile(np.abs(heatmap_centered[heatmap_centered < 0]), 99) if np.any(heatmap_centered < 0) else 0
 
     # Use the larger of the two percentiles for symmetric clipping
-    #clip_val = max(pos_p99, neg_p99)
+    clip_val = max(pos_p99, neg_p99)
 
-    #if clip_val > 0:
+    if clip_val > 0:
     ## Clip outliers symmetrically
-    #    heatmap_centered_clipped = np.clip(heatmap_centered, -clip_val, clip_val)
+        heatmap_centered_clipped = np.clip(heatmap_centered, -clip_val, clip_val)
    ### 
-    #    plt.figure(figsize=(8, 8))
-    #    plt.imshow(heatmap_centered_clipped, cmap='RdBu_r', vmin=-clip_val, vmax=clip_val)
-    #    plt.axis('off')
-    #    plt.tight_layout()
-    #    plt.savefig(out_path.replace('.png', '_centered.png'), bbox_inches='tight', pad_inches=0)
-    #    plt.close()
-    #    print(f"Centered (outlier-protected) heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
+        plt.figure(figsize=(8, 8))
+        plt.imshow(heatmap_centered_clipped, cmap='RdBu_r', vmin=-clip_val, vmax=clip_val)
+        plt.axis('off')
+        plt.tight_layout()
+        plt.savefig(out_path.replace('.png', '_centered.png'), bbox_inches='tight', pad_inches=0)
+        plt.close()
+        print(f"Centered (outlier-protected) heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
 
 
     
     # Method 4: Percentile-based normalization (often works best)
     # This handles outliers better
-    #p99 = np.percentile(np.abs(heatmap), 99)
-    #heatmap_clipped = np.clip(np.abs(heatmap), 0, p99)
-    #heatmap_norm = heatmap_clipped / p99 if p99 > 0 else heatmap_clipped
+    p99 = np.percentile(np.abs(heatmap), 99)
+    heatmap_clipped = np.clip(np.abs(heatmap), 0, p99)
+    heatmap_norm = heatmap_clipped / p99 if p99 > 0 else heatmap_clipped
    # 
-    #plt.figure(figsize=(8, 8))
-    #plt.imshow(heatmap_norm, cmap='hot')
-    #plt.axis('off')
-    #plt.tight_layout()
-    #plt.savefig(out_path, bbox_inches='tight', pad_inches=0)
-    #plt.close()
+    plt.figure(figsize=(8, 8))
+    plt.imshow(heatmap_norm, cmap='hot')
+    plt.axis('off')
+    plt.tight_layout()
+    plt.savefig(out_path, bbox_inches='tight', pad_inches=0)
+    plt.close()
     #print(f"Percentile-normalized heatmap saved to '{out_path}'")
 def get_augmented_vgg16_lrp_param(module_idx, total_modules):
     """
@@ -214,6 +214,7 @@ if __name__ == "__main__":
                 forward_idx = len(modules) - 1 - i
     
                 dynamic_param = get_augmented_vgg16_lrp_param(forward_idx, len(modules))
+                print(f"Gamma heuristic module {module} with param {dynamic_param}")
                 R_test = lrp(module, R_test, lrp_var=rule_name, param=dynamic_param)
 
         else: 
