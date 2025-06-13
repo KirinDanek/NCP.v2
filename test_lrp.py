@@ -171,10 +171,10 @@ if __name__ == "__main__":
 
     # Try different LRP rules for comparison
     lrp_rules = [
-        #('epsilon', 1e-6),      # epsilon rule - often good baseline
+        #('epsilon', 1e-2),      # epsilon rule - often good baseline
         #('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
-        ('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
-        #('gamma', 0.25),        # gamma rule
+        #('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
+        ('gamma', 'heuristic'),        # gamma rule
     ]
     
     for rule_name, param in lrp_rules:
@@ -183,7 +183,8 @@ if __name__ == "__main__":
         
         # Propagate in reverse order
         for module in reversed(modules):
-            R_test = lrp(module, R_test, lrp_var=rule_name, param=param)
+            
+            R_test = lrp(module, R_test, lrp_var=rule_name, param=dynamic_param)
             
             # Check for issues during propagation
             if torch.isnan(R_test).any():
