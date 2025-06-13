@@ -69,6 +69,24 @@ def Linear(module, R, lrp_var=None, param=None):
         return None
         # return _ww_lrp()
 
+    elif lrp_var.lower() == "gamma":
+        gamma = param
+        V = module.weight
+        VP = module.weight.clamp(min=0.0) #V pos
+        # gamma rule
+        V_gamma = V + gamma * VP
+
+        X = module.input + 1e-9
+
+        Z = torch.nn.functional.linear(X, V_gamma) + 1e-9
+        S = R / Z
+        C = torch.mm(S, V_gamma)
+        Rn = X * C
+        return Rn
+
+        
+
+
 def Pooling(module, R, lrp_var=None, param=None):
     R_shape = R.size()
     output_shape = module.output.shape
@@ -176,3 +194,26 @@ def Convolution(module, R, lrp_var=None, param=None):
                                                   dilation=module.dilation, groups=module.groups)
 
         return X * C - L * CP - H * CN
+    
+    elif lrp_var.lower() == 'gamma':
+        gamma = param
+        V = module.weight
+        VP = module.weight.clamp(min=0.0)
+
+        V_gamma = V + gamma * VP
+
+        X = module.input + 1e-9
+        Z = torch.nn.functional.conv2d(X, V_gamma, stride=module.stride, 
+                                       padding=module.padding, 
+                                       output_padding=1, dilation=module.dilation,
+                                       groups=module.groups)
+        S = R / Z
+
+        ## handle both stride cases
+        if module.stride[0] > 1:
+            C = torch.nn.functional.conv_transpose2d(S, V_gamma, stride=module.stride, padding=module.padding, 
+                                                   output_padding=1, dilation=module.dilation, groups=module.groups)
+        else:
+            C = torch.nn.functional.conv_transpose2d(S, V_gamma, stride=module.stride, padding=module.padding,
+                                                   dilation=module.dilation, groups=module.groups)
+        return X * C
