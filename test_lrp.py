@@ -129,39 +129,38 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     plt.imshow(heatmap_norm, cmap='hot')
     plt.axis('off')
     plt.tight_layout()
-    plt.savefig(out_path, bbox_inches='tight', pad_inches=0)
+    plt.savefig(out_path.replace('.png', '_pbn.png'), bbox_inches='tight', pad_inches=0)
     plt.close()
-    #print(f"Percentile-normalized heatmap saved to '{out_path}'")
-def get_augmented_vgg16_lrp_param(module_idx, total_modules):
+    print(f"Percentile-normalized heatmap saved to '{out_path.replace('.png', '_pbn.png')}'")
+
+def get_augmented_vgg16_lrp_param(module_idx):
     """
-    Returns LRP parameter for AugmentedVGG16 based on module index.
-    
-    AugmentedVGG16 has the same structure as VGG16 but with 2 additional modules
-    (encode and decode) inserted after conv4_3 (which is at index 22 in original VGG16).
-    
-    Original VGG16 structure + 2 additional modules:
-    - Block 1 (indices 0-2): param 0.5
-    - Block 2 (indices 3-5): param 0.5  
-    - Block 3 (indices 6-9): param 0.25
-    - Block 4 (indices 10-22): param 0.1
-    - Augmented layers (indices 23-24): encode/decode - param 0.1
-    - Block 5 + remaining (indices 25+): param 0.01
-    - Classifier: param 0.01
+    - Last layers: Linear layers (classifier) - indices 0-6
+    - Conv5 block: 512->512 convs (should be 0.01) - indices 7-11  
+    - Augmented: 1x1 convs (512->512, kernel=1x1) - indices 12-13
+    - Conv4 block: 256->512, 512->512 convs - indices 14-19
+    - Conv3 block: 128->256, 256->256 convs - indices 20-25
+    - Conv2 block: 64->128, 128->128 convs - indices 26-28
+    - Conv1 block: 3->64, 64->64 convs - indices 29-32
     """
     
-    # Features section (convolutional layers)
-    if module_idx < 25:  # Before classifier
-        if module_idx <= 2:  # Block 1 (first conv block)
-            return 0.5
-        elif 3 <= module_idx <= 5:  # Block 2 (second conv block)
-            return 0.5
-        elif 6 <= module_idx <= 9:  # Block 3 (third conv block)
-            return 0.25
-        elif 10 <= module_idx <= 24:  # Block 4 + augmented layers (fourth conv block + encode/decode)
-            return 0.1
-    
-    # Classifier section and remaining layers
-    return 0.01
+    # Working backwards from the output (reverse iteration)
+    if module_idx <= 6:  # Classifier (Linear, Dropout, ReLU layers)
+        return 0.01
+    elif 7 <= module_idx <= 11:  # Block 5 (conv5_x layers - should be 0.01)
+        return 0.01
+    elif 12 <= module_idx <= 13:  # Augmented layers (1x1 convs)
+        return 0.1
+    elif 14 <= module_idx <= 19:  # Block 4 (conv4_x layers)
+        return 0.1
+    elif 20 <= module_idx <= 25:  # Block 3 (conv3_x layers)
+        return 0.25
+    elif 26 <= module_idx <= 28:  # Block 2 (conv2_x layers) 
+        return 0.5
+    elif 29 <= module_idx <= 32:  # Block 1 (conv1_x layers)
+        return 0.5
+    else:
+        return 0.01  # Default
 
 if __name__ == "__main__":
     print("cuda: ", torch.cuda.is_available())
@@ -211,9 +210,8 @@ if __name__ == "__main__":
         
         if rule_name == 'gamma' and param == 'heuristic':
             for i, module in enumerate(reversed(modules)):
-                forward_idx = len(modules) - 1 - i
     
-                dynamic_param = get_augmented_vgg16_lrp_param(forward_idx, len(modules))
+                dynamic_param = get_augmented_vgg16_lrp_param(i)
                 print(f"Gamma heuristic module {module} with param {dynamic_param}")
                 R_test = lrp(module, R_test, lrp_var=rule_name, param=dynamic_param)
 
