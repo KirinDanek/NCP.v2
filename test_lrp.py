@@ -147,17 +147,13 @@ def get_augmented_vgg16_lrp_param(module_idx):
     # Working backwards from the output (reverse iteration)
     if module_idx <= 6:  # Classifier (Linear, Dropout, ReLU layers)
         return 0.01
-    elif 7 <= module_idx <= 11:  # Block 5 (conv5_x layers - should be 0.01)
+    elif 7 <= module_idx <= 11:  # Block 5 (conv5_x layers - last layers)
         return 0.01
-    elif 12 <= module_idx <= 13:  # Augmented layers (1x1 convs)
-        return 0.1
-    elif 14 <= module_idx <= 19:  # Block 4 (conv4_x layers)
+    elif 12 <= module_idx <= 19:  # Augmented layers (1x1 convs) + Block 4 (conv4_x layers)
         return 0.1
     elif 20 <= module_idx <= 25:  # Block 3 (conv3_x layers)
         return 0.25
-    elif 26 <= module_idx <= 28:  # Block 2 (conv2_x layers) 
-        return 0.5
-    elif 29 <= module_idx <= 32:  # Block 1 (conv1_x layers)
+    elif 26 <= module_idx <= 32:  # Block 1 & 2 (conv1_x and conv2_x layers) - first two blocks
         return 0.5
     else:
         return 0.01  # Default
