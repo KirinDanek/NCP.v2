@@ -80,7 +80,7 @@ def Linear(module, R, lrp_var=None, param=None):
 
         X = module.input 
 
-        Z = torch.nn.functional.linear(X, V_gamma, bias=module.bias) + SMALL_NUMBER
+        Z = torch.nn.functional.linear(X, V_gamma, bias=None) + SMALL_NUMBER
         S = R / Z
         C = torch.mm(S, V_gamma)
         Rn = X * C
@@ -205,7 +205,7 @@ def Convolution(module, R, lrp_var=None, param=None):
         V_gamma = V + gamma * VP
 
         X = module.input
-        Z = torch.nn.functional.conv2d(X, V_gamma, bias=module.bias, stride=module.stride, 
+        Z = torch.nn.functional.conv2d(X, V_gamma, bias=None, stride=module.stride, 
                                        padding=module.padding, dilation=module.dilation,
                                        groups=module.groups) 
         S = R / (Z + SMALL_NUMBER)
