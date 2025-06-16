@@ -3,6 +3,8 @@
 import torch
 import torch.nn as nn
 
+SMALL_NUMBER = 1e-6
+
 def lrp(module, R, lrp_var=None, param=None):
     with torch.no_grad():
         if isinstance(module, torch.nn.modules.linear.Linear):  # for Linear
@@ -29,7 +31,7 @@ def Linear(module, R, lrp_var=None, param=None):
         R = torch.reshape(R, output_shape)
 
     if lrp_var is None or lrp_var.lower() == 'none' or lrp_var.lower() == 'simple':
-        Z = torch.nn.functional.linear(module.input, module.weight) + 1e-9
+        Z = torch.nn.functional.linear(module.input, module.weight) + SMALL_NUMBER
         S = R / Z
         C = torch.mm(S, module.weight)
         Rn = module.input * C
@@ -43,10 +45,10 @@ def Linear(module, R, lrp_var=None, param=None):
         VP = module.weight.clamp(min=0.0)
         VN = module.weight.clamp(max=0.0)
 
-        X = module.input + 1e-9
+        X = module.input + SMALL_NUMBER
 
-        ZA = torch.nn.functional.linear(X, VP) + 1e-9
-        ZB = torch.nn.functional.linear(X, VN) + 1e-9
+        ZA = torch.nn.functional.linear(X, VP) + SMALL_NUMBER
+        ZB = torch.nn.functional.linear(X, VN) + SMALL_NUMBER
 
         SA = alpha * R / ZA
         SB = beta * R / ZB
@@ -76,9 +78,9 @@ def Linear(module, R, lrp_var=None, param=None):
         # gamma rule
         V_gamma = V + gamma * VP
 
-        X = module.input + 1e-9
+        X = module.input + SMALL_NUMBER
 
-        Z = torch.nn.functional.linear(X, V_gamma) + 1e-9
+        Z = torch.nn.functional.linear(X, V_gamma) + SMALL_NUMBER
         S = R / Z
         C = torch.mm(S, V_gamma)
         Rn = X * C
@@ -104,7 +106,7 @@ def Pooling(module, R, lrp_var=None, param=None):
         unpool = nn.MaxUnpool2d(module.kernel_size, stride=module.stride, padding=module.padding)
 
     Z, indice = pool(module.input)
-    S = R / (Z + 1e-9)
+    S = R / (Z + SMALL_NUMBER)
 
     C = unpool(S, indice)
     return module.input * C
@@ -119,7 +121,7 @@ def Convolution(module, R, lrp_var=None, param=None):
     if lrp_var is None or lrp_var.lower() == 'none' or lrp_var.lower() == 'simple':
         V = module.weight
         Z = torch.nn.functional.conv2d(module.input, V, stride=module.stride, padding=module.padding,
-                                       dilation=module.dilation, groups=module.groups) + 1e-9
+                                       dilation=module.dilation, groups=module.groups) + SMALL_NUMBER
         S = R / Z
         C = torch.nn.functional.conv_transpose2d(S, V, stride=module.stride, padding=module.padding,
                                                  dilation=module.dilation, groups=module.groups)
@@ -132,12 +134,12 @@ def Convolution(module, R, lrp_var=None, param=None):
         VP = module.weight.clamp(min=0.0)
         VN = module.weight.clamp(max=0.0)
 
-        X = module.input + 1e-9
+        X = module.input + SMALL_NUMBER
 
         ZA = torch.nn.functional.conv2d(X, VP, stride=module.stride, padding=module.padding,
-                                       dilation=module.dilation, groups=module.groups) + 1e-9
+                                       dilation=module.dilation, groups=module.groups) + SMALL_NUMBER
         ZB = torch.nn.functional.conv2d(X, VN, stride=module.stride, padding=module.padding,
-                                        dilation=module.dilation, groups=module.groups) + 1e-9
+                                        dilation=module.dilation, groups=module.groups) + SMALL_NUMBER
 
         SA = alpha * R / ZA
         SB = beta * R / ZB
@@ -183,7 +185,7 @@ def Convolution(module, R, lrp_var=None, param=None):
                                         dilation=module.dilation, groups=module.groups)
         ZH = torch.nn.functional.conv2d(H, VN, stride=module.stride, padding=module.padding,
                                         dilation=module.dilation, groups=module.groups)
-        Z = ZX - ZL - ZH + 1e-9
+        Z = ZX - ZL - ZH + SMALL_NUMBER
         S = R / Z
 
         C = torch.nn.functional.conv_transpose2d(S, V, stride=module.stride, padding=module.padding,
@@ -202,10 +204,10 @@ def Convolution(module, R, lrp_var=None, param=None):
 
         V_gamma = V + gamma * VP
 
-        X = module.input + 1e-9
+        X = module.input + SMALL_NUMBER
         Z = torch.nn.functional.conv2d(X, V_gamma, bias=None, stride=module.stride, 
                                        padding=module.padding, dilation=module.dilation,
-                                       groups=module.groups) + 1e-9
+                                       groups=module.groups) + SMALL_NUMBER
         S = R / Z
 
         ## handle both stride cases
