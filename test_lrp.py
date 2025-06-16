@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 ### vars
 SUBSPACE_DIMS = [128, 128, 128, 128]
-IRRELEVANT_SUBSPACES = [0,1,2]  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
+IRRELEVANT_SUBSPACES = []  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
 U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_tensor.pt'
 IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa-basketball-img3.jpg'
 OUTPUT_HEATMAP_PATH = 'lrp_heatmap.png'
@@ -61,7 +61,7 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     
     # Sum across RGB channels to get spatial heatmap
     heatmap = attr.sum(axis=0)  # → (224, 224)
-    
+    np.save(out_path.replace('.png', '_heatmap.npy'), heatmap)
     print(f"Raw heatmap stats — min: {heatmap.min():.6f}, max: {heatmap.max():.6f}, mean: {heatmap.mean():.6f}")
     
     # Method 1: Positive relevance only (your original approach)
@@ -104,7 +104,7 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
 
     # Use the larger of the two percentiles for symmetric clipping
     #clip_val = max(pos_p99, neg_p99)
-    clip_val = np.percentile(np.abs(heatmap), 94)
+    clip_val = np.percentile(np.abs(heatmap), 97)
 
     if clip_val > 0:
     ## Clip outliers symmetrically
@@ -209,10 +209,15 @@ if __name__ == "__main__":
         
         if rule_name == 'gamma' and param == 'heuristic':
             for i, module in enumerate(reversed(modules)):
-    
-                dynamic_param = get_augmented_vgg16_lrp_param(i)
-                print(f"Gamma heuristic module = {module} with gamma = {dynamic_param}")
-                R_test = lrp(module, R_test, lrp_var=rule_name, param=dynamic_param)
+                if True: # i == 16
+                    #R_test = lrp(module, R_test, lrp_var='epsilon', param=20.0)
+                #else:
+                    
+                    dynamic_param = get_augmented_vgg16_lrp_param(i)
+                    print(f"Gamma heuristic module = {module} with gamma = {dynamic_param}")
+                    R_test = lrp(module, R_test, lrp_var=rule_name, param=dynamic_param)
+                print(f"After layer {i} ({module.__class__.__name__}): R min={R_test.min().item():.2f}, max={R_test.max().item():.2f}, sum={R_test.sum().item():.2f}")
+
 
         else: 
             # Propagate in reverse order
