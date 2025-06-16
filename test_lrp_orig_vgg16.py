@@ -59,7 +59,7 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     
     # Method 1: Positive relevance only (your original approach)
     heatmap_pos = np.maximum(heatmap, 0)
-    p99 = np.percentile(heatmap_pos, 99)
+    p99 = np.percentile(heatmap_pos, 97)
     heatmap_pos = np.clip(heatmap_pos, 0, p99)
     
     if p99 > 0:
@@ -77,11 +77,12 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     # This shows both positive (red) and negative (blue) contributions
     heatmap_centered = heatmap.copy()
     # Protect against outliers using percentile clipping
-    pos_p99 = np.percentile(heatmap_centered[heatmap_centered > 0], 99) if np.any(heatmap_centered > 0) else 0
-    neg_p99 = np.percentile(np.abs(heatmap_centered[heatmap_centered < 0]), 99) if np.any(heatmap_centered < 0) else 0
+    #pos_p99 = np.percentile(heatmap_centered[heatmap_centered > 0], 99) if np.any(heatmap_centered > 0) else 0
+    #neg_p99 = np.percentile(np.abs(heatmap_centered[heatmap_centered < 0]), 99) if np.any(heatmap_centered < 0) else 0
 
     # Use the larger of the two percentiles for symmetric clipping
-    clip_val = max(pos_p99, neg_p99)
+    #clip_val = max(pos_p99, neg_p99)
+    clip_val = p99
 
     if clip_val > 0:
     # Clip outliers symmetrically
