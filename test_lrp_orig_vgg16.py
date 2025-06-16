@@ -38,8 +38,8 @@ def load_and_preprocess(image_path: str, device: torch.device):
 ### hooks for augmented vgg16
 def register_hooks(model):
     def save_input_output(mod, inp, out):
-        mod.input = inp[0]
-        mod.output = out
+        mod.input = inp[0].detach().clone()
+        mod.output = out.detach().clone()
 
     for module in model.modules():
         module.register_forward_hook(save_input_output)
