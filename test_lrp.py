@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 ### vars
 SUBSPACE_DIMS = [128, 128, 128, 128]
-IRRELEVANT_SUBSPACES = []  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
+IRRELEVANT_SUBSPACES = [0,1,2]  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
 U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_tensor.pt'
 IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa-basketball-img3.jpg'
 OUTPUT_HEATMAP_PATH = 'lrp_heatmap.png'
@@ -41,8 +41,8 @@ def load_and_preprocess(image_path: str, device: torch.device):
 ### hooks for augmented vgg16
 def register_hooks(model):
     def save_input_output(mod, inp, out):
-        mod.input = inp[0]
-        mod.output = out
+        mod.input = inp[0].detach().clone()
+        mod.output = out.detach().clone()
 
     for module in model.modules():
         module.register_forward_hook(save_input_output)
@@ -65,21 +65,21 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     print(f"Raw heatmap stats — min: {heatmap.min():.6f}, max: {heatmap.max():.6f}, mean: {heatmap.mean():.6f}")
     
     # Method 1: Positive relevance only (your original approach)
-    #heatmap_pos = np.maximum(heatmap, 0)
-    #p99 = np.percentile(heatmap_pos, 99)
-    #heatmap_pos = np.clip(heatmap_pos, 0, p99)
+    heatmap_pos = np.maximum(heatmap, 0)
+    p99 = np.percentile(heatmap_pos, 94)
+    heatmap_pos = np.clip(heatmap_pos, 0, p99)
 
     #max_val_pos = heatmap_pos.max()
     
-    #if p99 > 0:
-    #    heatmap_pos_norm = heatmap_pos / p99
-    #    plt.figure(figsize=(8, 8))
-    #    plt.imshow(heatmap_pos_norm, cmap='hot')
-    #    plt.axis('off')
-    #    plt.tight_layout()
-    #    plt.savefig(out_path.replace('.png', '_positive_only.png'), bbox_inches='tight', pad_inches=0)
-    #    plt.close()
-    #    print(f"Positive-only heatmap saved to '{out_path.replace('.png', '_positive_only.png')}'")
+    if p99 > 0:
+        heatmap_pos_norm = heatmap_pos / p99
+        plt.figure(figsize=(8, 8))
+        plt.imshow(heatmap_pos_norm, cmap='hot')
+        plt.axis('off')
+        plt.tight_layout()
+        plt.savefig(out_path.replace('.png', '_positive_only.png'), bbox_inches='tight', pad_inches=0)
+        plt.close()
+        print(f"Positive-only heatmap saved to '{out_path.replace('.png', '_positive_only.png')}'")
     
     # Method 2: Absolute values (recommended)
     #heatmap_abs = np.abs(heatmap)
@@ -99,11 +99,12 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     # This shows both positive (red) and negative (blue) contributions
     heatmap_centered = heatmap.copy()
     # Protect against outliers using percentile clipping
-    pos_p99 = np.percentile(heatmap_centered[heatmap_centered > 0], 99) if np.any(heatmap_centered > 0) else 0
-    neg_p99 = np.percentile(np.abs(heatmap_centered[heatmap_centered < 0]), 99) if np.any(heatmap_centered < 0) else 0
+    #pos_p99 = np.percentile(heatmap_centered[heatmap_centered > 0], 99) if np.any(heatmap_centered > 0) else 0
+    #neg_p99 = np.percentile(np.abs(heatmap_centered[heatmap_centered < 0]), 99) if np.any(heatmap_centered < 0) else 0
 
     # Use the larger of the two percentiles for symmetric clipping
-    clip_val = max(pos_p99, neg_p99)
+    #clip_val = max(pos_p99, neg_p99)
+    clip_val = np.percentile(np.abs(heatmap), 94)
 
     if clip_val > 0:
     ## Clip outliers symmetrically
@@ -121,17 +122,17 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     
     # Method 4: Percentile-based normalization (often works best)
     # This handles outliers better
-    p99 = np.percentile(np.abs(heatmap), 99)
-    heatmap_clipped = np.clip(np.abs(heatmap), 0, p99)
-    heatmap_norm = heatmap_clipped / p99 if p99 > 0 else heatmap_clipped
-   # 
-    plt.figure(figsize=(8, 8))
-    plt.imshow(heatmap_norm, cmap='hot')
-    plt.axis('off')
-    plt.tight_layout()
-    plt.savefig(out_path.replace('.png', '_pbn.png'), bbox_inches='tight', pad_inches=0)
-    plt.close()
-    print(f"Percentile-normalized heatmap saved to '{out_path.replace('.png', '_pbn.png')}'")
+    #p99 = np.percentile(np.abs(heatmap), 99)
+    #heatmap_clipped = np.clip(np.abs(heatmap), 0, p99)
+    #heatmap_norm = heatmap_clipped / p99 if p99 > 0 else heatmap_clipped
+   ## 
+    #plt.figure(figsize=(8, 8))
+    #plt.imshow(heatmap_norm, cmap='hot')
+    #plt.axis('off')
+    #plt.tight_layout()
+    #plt.savefig(out_path.replace('.png', '_pbn.png'), bbox_inches='tight', pad_inches=0)
+    #plt.close()
+    #print(f"Percentile-normalized heatmap saved to '{out_path.replace('.png', '_pbn.png')}'")
 
 def get_augmented_vgg16_lrp_param(module_idx: int) -> float:
     """
@@ -154,6 +155,7 @@ def get_augmented_vgg16_lrp_param(module_idx: int) -> float:
         return 0.25
     else:                                       # Conv2, Conv1, and anything earlier
         return 0.50
+
 
 
 if __name__ == "__main__":
@@ -190,6 +192,12 @@ if __name__ == "__main__":
     # Flatten model into an ordered list
     modules = list(augmentedVGG16.before) + [augmentedVGG16.encode, augmentedVGG16.decode] + list(augmentedVGG16.after) + list(augmentedVGG16.classifier)
 
+
+    j = 0
+    for module in reversed(modules):
+        print(f'module {j} = {module}')
+        j +=1
+    
     # Try different LRP rules for comparison
     lrp_rules = [
         #('epsilon', 1e-2),      # epsilon rule - often good baseline
