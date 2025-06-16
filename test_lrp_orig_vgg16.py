@@ -94,6 +94,31 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
         plt.close()
         print(f"Centered (outlier-protected) heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
 
+def get_vgg16_lrp_param(module_idx: int) -> float:
+    """
+    γ-schedule for LRP-γ on AugmentedVGG16, counting *from the output side* as we
+    iterate through reversed(modules).
+
+    ── classifier head ─────────────── 0.00
+    ── Conv5 block  ─────────────────  0.00
+    ── Augmented 1×1 + Conv4 block ─  0.10
+    ── Conv3 block  ─────────────────  0.25
+    ── Conv2 + Conv1 blocks ─────────  0.50  (all remaining layers)
+    """
+    if module_idx <= 6:                         # classifier layers
+        return 0.0
+    elif 7 <= module_idx <= 13:                 # Conv5
+        return 0.0
+    elif 14 <= module_idx <= 20:                # 1×1 augmented + Conv4
+        return 0.10
+    elif 21 <= module_idx <= 27:                # Conv3
+        return 0.25
+    else:
+        if module_idx < 28 or module_idx > 37:
+            print(f'unexpected module index {module_idx}')                                       # Conv2, Conv1, and anything earlier
+        return 0.50
+
+
 if __name__ == "__main__":
     print("cuda: ", torch.cuda.is_available())
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -122,27 +147,37 @@ if __name__ == "__main__":
 
     # Try different LRP rules for comparison
     lrp_rules = [
-        ('epsilon', 1e-6),      # epsilon rule - often good baseline
+        #('epsilon', 1e-6),      # epsilon rule - often good baseline
         #('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
         #('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
         #('gamma', 0.25),        # gamma rule
+        ('gamma', 'heuristic')
     ]
-    
+
     for rule_name, param in lrp_rules:
         print(f"\n=== LRP rule: {rule_name} with param {param} ===")
         R_test = R.clone()
         
-        # Propagate in reverse order
-        for module in reversed(modules):
-            R_test = lrp(module, R_test, lrp_var=rule_name, param=param)
+        if rule_name == 'gamma' and param == 'heuristic':
+            for i, module in enumerate(reversed(modules)):
+    
+                dynamic_param = get_vgg16_lrp_param(i)
+                print(f"Gamma heuristic module = {module} at index {i} with gamma = {dynamic_param}")
+                R_test = lrp(module, R_test, lrp_var=rule_name, param=dynamic_param)
+
+        else: 
+            # Propagate in reverse order
+            for module in reversed(modules):
             
-            # Check for issues during propagation
-            if torch.isnan(R_test).any():
-                print(f"ERROR: NaN detected after {module.__class__.__name__}")
-                break
-            if torch.isinf(R_test).any():
-                print(f"ERROR: Inf detected after {module.__class__.__name__}")
-                break
+                R_test = lrp(module, R_test, lrp_var=rule_name, param=param)
+            
+                # Check for issues during propagation
+                if torch.isnan(R_test).any():
+                    print(f"ERROR: NaN detected after {module.__class__.__name__}")
+                    break
+                if torch.isinf(R_test).any():
+                    print(f"ERROR: Inf detected after {module.__class__.__name__}")
+                    break
                 
         print(f"Final input relevance sum: {R_test.sum().item():.4f}")
         
