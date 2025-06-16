@@ -147,13 +147,16 @@ def get_augmented_vgg16_lrp_param(module_idx: int) -> float:
     """
     if module_idx <= 6:                         # classifier layers
         return 0.0
-    elif 7 <= module_idx <= 11:                 # Conv5
+    elif 7 <= module_idx <= 13:                 # Conv5
         return 0.0
-    elif 12 <= module_idx <= 19:                # 1×1 augmented + Conv4
+    elif 14 <= module_idx <= 22:                # 1×1 augmented + Conv4
         return 0.10
-    elif 20 <= module_idx <= 25:                # Conv3
+    elif 23 <= module_idx <= 29:                # Conv3
         return 0.25
-    else:                                       # Conv2, Conv1, and anything earlier
+    else:     
+        if module_idx < 30 or module_idx > 39:
+            print(f'unexpected module index {module_idx}') 
+                                            # Conv2, Conv1, and anything earlier
         return 0.50
 
 
@@ -192,12 +195,6 @@ if __name__ == "__main__":
     # Flatten model into an ordered list
     modules = list(augmentedVGG16.before) + [augmentedVGG16.encode, augmentedVGG16.decode] + list(augmentedVGG16.after) + list(augmentedVGG16.classifier)
 
-
-    j = 0
-    for module in reversed(modules):
-        print(f'module {j} = {module}')
-        j +=1
-    
     # Try different LRP rules for comparison
     lrp_rules = [
         #('epsilon', 1e-2),      # epsilon rule - often good baseline
