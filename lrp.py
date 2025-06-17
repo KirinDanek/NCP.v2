@@ -209,9 +209,15 @@ def Convolution(module, R, lrp_var=None, param=None):
         Z = torch.nn.functional.conv2d(X, V_gamma, bias=None, stride=module.stride, 
                                        padding=module.padding, dilation=module.dilation,
                                        groups=module.groups) 
+        #debug 
+        print("Z stats:", Z.min(), Z.max(), Z.mean())
+        print("X stats:", X.min(), X.max(), X.mean())
+        print("weight stats:", module.weight.min(), module.weight.max(), module.weight.norm())
+
+
         S = R / (Z + SMALL_NUMBER)
 
-        ## handle both stride cases
+        ## handle both stride cases in future, only 1x1 for augmented net
         if module.stride[0] > 1:
             C = torch.nn.functional.conv_transpose2d(S, V_gamma, bias=None, stride=module.stride, padding=module.padding, 
                                                    output_padding=1, dilation=module.dilation, groups=module.groups)
