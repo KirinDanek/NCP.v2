@@ -26,7 +26,7 @@ def ablate_subspace_matrix(U: torch.Tensor, subspace_dims: list, irrelevant_subs
 #    UT    = U_ab_transpose.cuda()
 #    model = AugmentedVGG16(U=U, UT=UT).cuda()
 #    model.eval()
-### adapted from https://github.com/p16i/drsa-demo/blob/main/cxai/inspector/base.py
+### reference https://github.com/p16i/drsa-demo/blob/main/cxai/inspector/base.py
 class AugmentedVGG16(nn.Module):
     def __init__(self, U: torch.Tensor, UT: torch.Tensor):
         """
@@ -40,22 +40,22 @@ class AugmentedVGG16(nn.Module):
         
         # Load pretrained VGG16 and split its feature extractor
         base = vgg16(pretrained=True)
-        features = base.features
+        features = base.features  ## sequential container for conv layers
         
         # Freeze all parameters in the original feature extractor and classifier
         for param in features.parameters():
             param.requires_grad = False
-        for param in base.classifier.parameters():
+        for param in base.classifier.parameters():  # classifier (fc) layers
             param.requires_grad = False
         
         # Build 1x1 convs for encoding (UT) and decoding (U)
-        self.encode = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=1, bias=False)
+        self.encode = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=1, bias=False) #1x1 conv layer --> linear layer, channelwise
         self.decode = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=1, bias=False)
         
         # Copy UT into encode.weight and U into decode.weight
         # UT and U should be torch.Tensors of shape (512,512)
         with torch.no_grad():
-            self.encode.weight.copy_(UT.view(512, 512, 1, 1))
+            self.encode.weight.copy_(UT.view(512, 512, 1, 1)) 
             self.decode.weight.copy_(U.view(512, 512, 1, 1))
         
         # Freeze encode/decode weights
@@ -66,7 +66,7 @@ class AugmentedVGG16(nn.Module):
         
         # Identify conv4_3 layer in VGG16 features:
         # conv4_3 is features[21] (0-indexed) followed by ReLU at [22].
-        # We will apply encode/decode after the ReLU at index 22.
+        # We will apply encode/decode after the ReLU at index 22. (before maxpool)
         # So "before" includes indices 0..22, and "after" starts at 23.
         self.before = nn.Sequential(*list(features.children())[:23])  # up to ReLU after conv4_3
         self.after = nn.Sequential(*list(features.children())[23:])  # pool4 onward
