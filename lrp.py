@@ -1,4 +1,4 @@
-## adapted from: https://github.com/seulkiyeom/LRP_Pruning_toy_example/blob/master/modules/lrp.py 
+## reference: https://github.com/seulkiyeom/LRP_Pruning_toy_example/blob/master/modules/lrp.py 
 
 import torch
 import torch.nn as nn
@@ -13,7 +13,7 @@ def lrp(module, R, lrp_var=None, param=None):
             return Convolution(module, R, lrp_var, param)
         elif isinstance(module, torch.nn.modules.activation.ReLU) or isinstance(module, torch.nn.modules.dropout.Dropout):
             return R
-        elif isinstance(module, torch.nn.modules.activation.LogSoftmax):
+        elif isinstance(module, torch.nn.modules.activation.LogSoftmax): ### just multiply r by layer input
             return module.input * R
         elif isinstance(module, torch.nn.modules.pooling.AvgPool2d) or isinstance(module,
                                                                                   torch.nn.modules.pooling.MaxPool2d):
@@ -96,10 +96,11 @@ def Pooling(module, R, lrp_var=None, param=None):
         R = torch.reshape(R, output_shape)
     N, NF, Hout, Wout = R.size()
 
-    if isinstance(module, torch.nn.modules.pooling.AvgPool2d): #there is built-in avgunpool method yet!
+    if isinstance(module, torch.nn.modules.pooling.AvgPool2d): #there is no built-in avgunpool method yet!
         pool = nn.AvgPool2d(module.kernel_size, stride=module.stride, padding=module.padding,
                                            ceil_mode=module.ceil_mode,
                                            count_include_pad=module.count_include_pad)
+        raise NotImplementedError
     elif isinstance(module, torch.nn.modules.pooling.MaxPool2d):
         pool = nn.MaxPool2d(module.kernel_size, stride=module.stride, padding=module.padding,
                             dilation=module.dilation, ceil_mode=module.ceil_mode, return_indices=True)
