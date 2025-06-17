@@ -176,3 +176,21 @@ if __name__ == "__main__":
         if len(v_bhooks) != len(a_bhooks):
             print("❗ Backward hook count mismatch")
 
+    van_in = vanillaVGG16.features[24].input
+    aug_in = augmentedVGG16.after[1].input  # This is conv5_1 in augmented
+
+    abs_diff = torch.abs(van_in - aug_in)
+    print("input")
+    print(f"Max abs diff: {abs_diff.max().item()}")
+    print(f"Mean abs diff: {abs_diff.mean().item()}")
+    print(f"Relative norm diff: {(abs_diff.norm() / (van_in.norm() + 1e-8)).item()}")
+
+    van_out = vanillaVGG16.features[24].output
+    aug_out = augmentedVGG16.after[1].output  # This is conv5_1 in augmented
+
+    abs_diff = torch.abs(van_out - aug_out)
+    print("output")
+    print(f"Max abs diff: {abs_diff.max().item()}")
+    print(f"Mean abs diff: {abs_diff.mean().item()}")
+    print(f"Relative norm diff: {(abs_diff.norm() / (van_in.norm() + 1e-8)).item()}")
+
