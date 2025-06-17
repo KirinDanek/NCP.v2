@@ -134,3 +134,45 @@ if __name__ == "__main__":
         print(f"max diff: {abs_diff.max().item()}, average: {abs_diff.mean().item()}")
         rel_diff = abs_diff / (torch.abs(output_van) + 1e-8)
         print(f"max relative diff: {rel_diff.max().item()}, mean relative diff: {rel_diff.mean().item()}")
+    
+    # Manually flatten both models
+    modules_van = list(vanillaVGG16.features) + list(vanillaVGG16.classifier)
+    modules_aug = (
+        list(augmentedVGG16.before)
+        + [augmentedVGG16.encode, augmentedVGG16.decode]
+        + list(augmentedVGG16.after)
+        + list(augmentedVGG16.classifier)
+    )
+
+    # Create manual layer correspondence: (van_idx, aug_idx)
+    # This map assumes encode/decode inserted after pool4
+    index_pairs = []
+
+    # Before encode/decode: conv1 → pool4 (index 0 to 22)
+    for i in range(23):
+        index_pairs.append((i, i))
+
+# After insertion: block 5 onward (shift by +2 in augmented)
+    for i in range(23, len(modules_van)):
+        index_pairs.append((i, i + 2))
+
+    print("Comparing registered hooks between vanilla and augmented:")
+
+    for van_idx, aug_idx in reversed(index_pairs):
+        mod_van = modules_van[van_idx]
+        mod_aug = modules_aug[aug_idx]
+
+        v_fhooks = list(mod_van._forward_hooks.values())
+        a_fhooks = list(mod_aug._forward_hooks.values())
+        v_bhooks = list(mod_van._backward_hooks.values())
+        a_bhooks = list(mod_aug._backward_hooks.values())
+
+        print(f"\n--- Vanilla[{van_idx}] vs Augmented[{aug_idx}] ({mod_van.__class__.__name__}) ---")
+        print(f"Forward hooks: Vanilla = {len(v_fhooks)}, Augmented = {len(a_fhooks)}")
+        print(f"Backward hooks: Vanilla = {len(v_bhooks)}, Augmented = {len(a_bhooks)}")
+
+        if len(v_fhooks) != len(a_fhooks):
+            print("❗ Forward hook count mismatch")
+        if len(v_bhooks) != len(a_bhooks):
+            print("❗ Backward hook count mismatch")
+
