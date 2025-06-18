@@ -84,7 +84,7 @@ class AugmentedVGG16(nn.Module):
         x = self.encode(x)  # shape becomes (B, 512, 28, 28)
         x = self.decode(x)  # returns to (B, 512, 28, 28)
 
-        x = l_star_activations
+        x = l_star_activations ### DEBUG REMEMBER TO COMMENT THIS OUT
 
         
         # 3. Continue through the remaining conv/pool layers
