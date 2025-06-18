@@ -77,10 +77,15 @@ class AugmentedVGG16(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # 1. Pass through layers up to conv4_3's ReLU output
         x = self.before(x)  # shape: (B, 512, 28, 28) when input is 224x224
+        l_star_activations = x.detach().clone()
+        
         
         # 2. Encode into subspace with UT, then decode back with U
         x = self.encode(x)  # shape becomes (B, 512, 28, 28)
         x = self.decode(x)  # returns to (B, 512, 28, 28)
+
+        x = l_star_activations
+
         
         # 3. Continue through the remaining conv/pool layers
         x = self.after(x)
