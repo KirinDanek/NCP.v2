@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 
-SMALL_NUMBER = 1e-6
+SMALL_NUMBER = 1e-9
 
 def lrp(module, R, lrp_var=None, param=None):
     with torch.no_grad():
@@ -210,10 +210,10 @@ def Convolution(module, R, lrp_var=None, param=None):
                                        padding=module.padding, dilation=module.dilation,
                                        groups=module.groups) 
         #debug 
-        print("Z stats:", Z.min(), Z.max(), Z.mean())
-        print("X stats:", X.min(), X.max(), X.mean())
-        print("weight stats:", module.weight.min(), module.weight.max(), module.weight.norm())
-
+        print("Z stats:", Z.abs().min(), Z.max(), Z.mean())
+        print("X stats:", X.abs().min(), X.max(), X.mean())
+        print("weight stats:", module.weight.abs().min(), module.weight.max(), module.weight.norm())
+        
 
         S = R / (Z + SMALL_NUMBER)
 

@@ -168,6 +168,10 @@ if __name__ == "__main__":
     ### 1. Load tensor U, ablate and move to GPU
     U = torch.load(U_FILEPATH)  # shape: (512, 512)
     U_ab, U_ab_T = ablate_subspace_matrix(U, SUBSPACE_DIMS, IRRELEVANT_SUBSPACES)
+    #U_ab = torch.eye(512)
+    #U_ab_T = torch.eye(512)
+
+
     U_ab = U_ab.to(device)
     U_ab_T = U_ab_T.to(device)
 
@@ -200,7 +204,8 @@ if __name__ == "__main__":
         #('epsilon', 1e-2),      # epsilon rule - often good baseline
         #('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
         #('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
-        ('gamma', 'heuristic'),        # gamma rule
+        #('gamma', 'heuristic'),        # gamma rule
+        ('gamma', 0.0)
     ]
     
     for rule_name, param in lrp_rules:
@@ -221,10 +226,14 @@ if __name__ == "__main__":
 
         else: 
             # Propagate in reverse order
-            for module in reversed(modules):
-            
+            for i, module in enumerate(reversed(modules)):
+                              
                 R_test = lrp(module, R_test, lrp_var=rule_name, param=param)
-            
+                if i == 15:
+                    l15 = R_test
+                if i == 17:
+                    l17 = R_test
+                print(f"After layer ({module.__class__.__name__}): R min={R_test.min().item():.2f}, max={R_test.max().item():.2f}, sum={R_test.sum().item():.2f}")
                 # Check for issues during propagation
                 if torch.isnan(R_test).any():
                     print(f"ERROR: NaN detected after {module.__class__.__name__}")
@@ -234,6 +243,9 @@ if __name__ == "__main__":
                     break
                 
         print(f"Final input relevance sum: {R_test.sum().item():.4f}")
+
+        abs_diff = abs(l15 - l17)
+        print(torch.amax(abs_diff), " ", torch.amin(abs_diff))
         
         # Save heatmap for this rule
         rule_output_path = OUTPUT_HEATMAP_PATH.replace('.png', f'_{rule_name}_{param}.png')
