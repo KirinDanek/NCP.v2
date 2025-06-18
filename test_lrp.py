@@ -229,11 +229,11 @@ if __name__ == "__main__":
             for i, module in enumerate(reversed(modules)):
                               
                 R_test = lrp(module, R_test, lrp_var=rule_name, param=param)
-                if i == 15:
+                if i == 14:
                     l15 = R_test
                 if i == 17:
                     l17 = R_test
-                print(f"After layer ({module.__class__.__name__}): R min={R_test.min().item():.2f}, max={R_test.max().item():.2f}, sum={R_test.sum().item():.2f}")
+                print(f"After layer {i} ({module.__class__.__name__}): R min={R_test.min().item():.2f}, max={R_test.max().item():.2f}, sum={R_test.sum().item():.2f}")
                 # Check for issues during propagation
                 if torch.isnan(R_test).any():
                     print(f"ERROR: NaN detected after {module.__class__.__name__}")
@@ -248,5 +248,5 @@ if __name__ == "__main__":
         print(torch.amax(abs_diff), " ", torch.amin(abs_diff))
         
         # Save heatmap for this rule
-        rule_output_path = OUTPUT_HEATMAP_PATH.replace('.png', f'_{rule_name}_{param}.png')
-        visualize_and_save_lrp(R_test, out_path=rule_output_path)
+        #rule_output_path = OUTPUT_HEATMAP_PATH.replace('.png', f'_{rule_name}_{param}.png')
+        #visualize_and_save_lrp(R_test, out_path=rule_output_path)
