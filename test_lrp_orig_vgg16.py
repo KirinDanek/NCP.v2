@@ -13,7 +13,7 @@ from torchvision.models import vgg16
 
 ### vars
 IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa-basketball-img3.jpg'
-OUTPUT_HEATMAP_PATH = 'lrp_heatmap.png'
+OUTPUT_HEATMAP_PATH = 'lrp_heatmap_van.png'
 
 # "basketball" in ImageNet is class index 430 (zero‐indexed)
 TARGET_CLASS = 430
@@ -83,18 +83,18 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     # Use the larger of the two percentiles for symmetric clipping
     #clip_val = max(pos_p99, neg_p99)
     #clip_val = p99
-    clip_val = 0.3
+    #clip_val = 0.3
 
-    if clip_val > 0:
+    if True:
     # Clip outliers symmetrically
-        heatmap_centered_clipped = np.clip(heatmap_centered, -0.02, 0.02)
+        #heatmap_centered_clipped = np.clip(heatmap_centered, -0.02, 0.02)
         plt.figure(figsize=(8, 8))
-        plt.imshow(heatmap_centered_clipped, cmap='RdBu_r', vmin=-clip_val, vmax=clip_val)
+        plt.imshow(heatmap_centered, cmap='RdBu_r')
         plt.axis('off')
         plt.tight_layout()
         plt.savefig(out_path.replace('.png', '_centered.png'), bbox_inches='tight', pad_inches=0)
         plt.close()
-        print(f"Centered (outlier-protected) heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
+        print(f"Centered heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
 
 def get_vgg16_lrp_param(module_idx: int) -> float:
     """
@@ -162,11 +162,15 @@ if __name__ == "__main__":
         
         if rule_name == 'gamma' and param == 'heuristic':
             for i, module in enumerate(reversed(modules)):
-    
-                dynamic_param = get_vgg16_lrp_param(i)
-                print(f"Gamma heuristic module = {module} at index {i} with gamma = {dynamic_param}")
-                R_test = lrp(module, R_test, lrp_var=rule_name, param=dynamic_param)
-
+                if i == 37:
+                    R_test = lrp(module, R_test, lrp_var='first')
+                    print(f"idx {i}: handling pixel layer")
+                else:
+                    
+                    dynamic_param = get_vgg16_lrp_param(i)
+                    print(f"Gamma heuristic module = {module} at index {i} with gamma = {dynamic_param}")
+                    R_test = lrp(module, R_test, lrp_var=rule_name, param=dynamic_param)
+                print(f"R stats at layer {i}: R min={R_test.min().item():.2f}, max={R_test.max().item():.2f}, sum={R_test.sum().item():.2f}") 
         else: 
             # Propagate in reverse order
             for module in reversed(modules):
