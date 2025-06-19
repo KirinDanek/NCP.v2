@@ -104,19 +104,19 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
 
     # Use the larger of the two percentiles for symmetric clipping
     #clip_val = max(pos_p99, neg_p99)
-    clip_val = np.percentile(np.abs(heatmap), 97)
+    #clip_val = np.percentile(np.abs(heatmap), 97)
 
-    if clip_val > 0:
+    if True:
     ## Clip outliers symmetrically
-        heatmap_centered_clipped = np.clip(heatmap_centered, -clip_val, clip_val)
+        #heatmap_centered_clipped = np.clip(heatmap_centered, -clip_val, clip_val)
    ### 
         plt.figure(figsize=(8, 8))
-        plt.imshow(heatmap_centered_clipped, cmap='RdBu_r', vmin=-clip_val, vmax=clip_val)
+        plt.imshow(heatmap_centered, cmap='RdBu_r')
         plt.axis('off')
         plt.tight_layout()
         plt.savefig(out_path.replace('.png', '_centered.png'), bbox_inches='tight', pad_inches=0)
         plt.close()
-        print(f"Centered (outlier-protected) heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
+        print(f"Centered heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
 
 
     
@@ -204,8 +204,8 @@ if __name__ == "__main__":
         #('epsilon', 1e-2),      # epsilon rule - often good baseline
         #('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
         #('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
-        #('gamma', 'heuristic'),        # gamma rule
-        ('gamma', 0.0)
+        ('gamma', 'heuristic'),        # gamma rule
+        #('gamma', 0.0)
     ]
     
     for rule_name, param in lrp_rules:
@@ -214,10 +214,11 @@ if __name__ == "__main__":
         
         if rule_name == 'gamma' and param == 'heuristic':
             for i, module in enumerate(reversed(modules)):
-                if True: # i == 16
-                    #R_test = lrp(module, R_test, lrp_var='epsilon', param=20.0)
-                #else:
-                    
+                if i == 39: # i == 16
+                    R_test = lrp(module, R_test, lrp_var='first')
+                    print(f"handle pixel layer at idx {i}")
+
+                else:
                     dynamic_param = get_augmented_vgg16_lrp_param(i)
                     print(f"Gamma heuristic module = {module} with gamma = {dynamic_param}")
                     R_test = lrp(module, R_test, lrp_var=rule_name, param=dynamic_param)
@@ -246,9 +247,9 @@ if __name__ == "__main__":
                 
         print(f"Final input relevance sum: {R_test.sum().item():.4f}")
 
-        abs_diff = abs(l15 - l17)
-        print(torch.amax(abs_diff), " ", torch.amin(abs_diff))
+        #abs_diff = abs(l15 - l17)
+        #print(torch.amax(abs_diff), " ", torch.amin(abs_diff))
         
         # Save heatmap for this rule
-        #rule_output_path = OUTPUT_HEATMAP_PATH.replace('.png', f'_{rule_name}_{param}.png')
-        #visualize_and_save_lrp(R_test, out_path=rule_output_path)
+        rule_output_path = OUTPUT_HEATMAP_PATH.replace('.png', f'_{rule_name}_{param}.png')
+        visualize_and_save_lrp(R_test, out_path=rule_output_path)
