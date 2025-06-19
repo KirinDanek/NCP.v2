@@ -227,8 +227,10 @@ if __name__ == "__main__":
         else: 
             # Propagate in reverse order
             for i, module in enumerate(reversed(modules)):
-                              
-                R_test = lrp(module, R_test, lrp_var=rule_name, param=param)
+                if i == 39:
+                    R_test = lrp(module, R_test, lrp_rule='first')
+                else:               
+                    R_test = lrp(module, R_test, lrp_var=rule_name, param=param)
                 if i == 14:
                     l15 = R_test
                 if i == 17:

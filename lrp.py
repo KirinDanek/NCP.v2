@@ -57,7 +57,7 @@ def Linear(module, R, lrp_var=None, param=None):
 
         return Rn
 
-    elif lrp_var.lower() == 'z+' or lrp_var.lower() == 'z' or lrp_var.lower() == 'epsilon':
+    elif lrp_var.lower() == 'z+' or lrp_var.lower() == 'z':
         epsilon = param
         V = module.weight.clamp(min=0.0)
 
@@ -154,7 +154,7 @@ def Convolution(module, R, lrp_var=None, param=None):
 
         return Rn
 
-    elif lrp_var.lower() == 'z+' or lrp_var.lower() == 'z' or lrp_var.lower() == 'epsilon':
+    elif lrp_var.lower() == 'z+' or lrp_var.lower() == 'z':
         epsilon = param
         V = module.weight.clamp(min=0.0)
         Z = torch.nn.functional.conv2d(module.input, V, stride=module.stride, padding=module.padding,
