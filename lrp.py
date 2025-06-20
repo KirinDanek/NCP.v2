@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 
 SMALL_NUMBER = 1e-9
+MEAN = [0.485, 0.456, 0.406]### imagenet mean and std
+STD = [0.229, 0.224, 0.225]
 
 def lrp(module, R, lrp_var=None, param=None):
     with torch.no_grad():
@@ -112,6 +114,14 @@ def Pooling(module, R, lrp_var=None, param=None):
     C = unpool(S, indice)
     return module.input * C
 
+def get_normalized_bounds(mean, std, device):
+    mean = torch.tensor(mean, device=device).reshape(1, 3, 1, 1)
+    std = torch.tensor(std, device=device).reshape(1, 3, 1, 1)
+    lb = (0 - mean) / std
+    hb = (1 - mean) / std
+    return lb, hb
+
+
 def Convolution(module, R, lrp_var=None, param=None):
     R_shape = R.size()
     output_shape = module.output.shape
@@ -172,9 +182,13 @@ def Convolution(module, R, lrp_var=None, param=None):
         return None
 
     elif lrp_var.lower() == 'first':
-        lowest = -1.0
-        highest = 1.0
+        #lowest = -1.0 # if black and white (1 channel)
+        #highest = 1.0
+        device = module.input.device
 
+        lowest, highest = get_normalized_bounds(MEAN, STD, device=device) ## hardcoded to 3 channels (RGB) 
+
+        print(f"Pixel-layer attributions normalized to [{lowest}, {highest}]")
         V = module.weight
         VN = module.weight.clamp(max=0.0)
         VP = module.weight.clamp(min=0.0)
