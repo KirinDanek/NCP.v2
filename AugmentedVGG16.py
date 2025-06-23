@@ -13,8 +13,8 @@ def ablate_subspace_matrix(U: torch.Tensor, subspace_dims: list, irrelevant_subs
     for k_prime in irrelevant_subspaces:
         start_dim = sum(subspace_dims[:k_prime])
         block_size = subspace_dims[k_prime]
-        U_ab[:, start_dim : start_dim + block_size] = 0
-        U_ab_transpose[start_dim : start_dim + block_size, :] = 0
+        U_ab[:, start_dim : start_dim + block_size] = 0.0001 #### 0.00
+        U_ab_transpose[start_dim : start_dim + block_size, :] = 0.0001 #### 0.00
 
     return U_ab, U_ab_transpose
 
@@ -84,7 +84,7 @@ class AugmentedVGG16(nn.Module):
         x = self.encode(x)  # shape becomes (B, 512, 28, 28)
         x = self.decode(x)  # returns to (B, 512, 28, 28)
 
-        x = l_star_activations ### DEBUG REMEMBER TO COMMENT THIS OUT
+        #x = l_star_activations ### DEBUG REMEMBER TO COMMENT THIS OUT
 
         
         # 3. Continue through the remaining conv/pool layers
