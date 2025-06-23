@@ -59,13 +59,12 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     
     # Method 1: Positive relevance only (your original approach)
     heatmap_pos = np.maximum(heatmap, 0)
-    p99 = np.percentile(heatmap_pos, 94)
-    heatmap_pos = np.clip(heatmap_pos, 0, p99)
+    #p99 = np.percentile(heatmap_pos, 94)
+    #heatmap_pos = np.clip(heatmap_pos, 0, p99)
     
-    if p99 > 0:
-        heatmap_pos_norm = heatmap_pos / p99
+    if True:
         plt.figure(figsize=(8, 8))
-        plt.imshow(heatmap_pos_norm, cmap='hot')
+        plt.imshow(heatmap_pos, cmap='hot')
         plt.axis('off')
         plt.tight_layout()
         plt.savefig(out_path.replace('.png', '_positive_only.png'), bbox_inches='tight', pad_inches=0)
@@ -89,12 +88,23 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     # Clip outliers symmetrically
         #heatmap_centered_clipped = np.clip(heatmap_centered, -0.02, 0.02)
         plt.figure(figsize=(8, 8))
-        plt.imshow(heatmap_centered, cmap='RdBu_r')
+        plt.imshow(heatmap_centered, cmap='bwr')
         plt.axis('off')
         plt.tight_layout()
         plt.savefig(out_path.replace('.png', '_centered.png'), bbox_inches='tight', pad_inches=0)
         plt.close()
         print(f"Centered heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
+    heatmap_seismic = 10*((np.abs(heatmap)**3.0).mean()**(1.0/3))
+    from matplotlib.colors import ListedColormap
+    my_cmap = plt.cm.seismic(np.arange(plt.cm.seismic.N))
+    my_cmap[:,0:3] *=0.85
+    my_cmap = ListedColormap(my_cmap)
+    plt.figure()
+    plt.subplots_adjust(left=0,right=1,bottom=0,top=1)
+    plt.axis('off')
+    plt.imshow(heatmap, cmap=my_cmap, vmin=-heatmap_seismic, vmax=heatmap_seismic, interpolation='nearest')
+    plt.savefig(out_path.replace('.png', '_seismic.png'))
+    plt.close()
 
 def get_vgg16_lrp_param(module_idx: int) -> float:
     """
@@ -108,13 +118,13 @@ def get_vgg16_lrp_param(module_idx: int) -> float:
     ── Conv2 + Conv1 blocks ─────────  0.50  (all remaining layers)
     """
     if module_idx <= 6:                         # classifier layers
-        return 0.0
+        return 0.0 # 0.0
     elif 7 <= module_idx <= 13:                 # Conv5
-        return 0.0
+        return 0.0 #0.0
     elif 14 <= module_idx <= 20:                # 1×1 augmented + Conv4
-        return 0.10
+        return 0.10 # 0.10
     elif 21 <= module_idx <= 27:                # Conv3
-        return 0.25
+        return 0.25 # 0.25
     else:
         if module_idx < 28 or module_idx > 37:
             print(f'unexpected module index {module_idx}')                                       # Conv2, Conv1, and anything earlier
@@ -135,8 +145,10 @@ if __name__ == "__main__":
     ### 3. Load and preprocess the input image
     input_tensor, _ = load_and_preprocess(IMAGE_FILEPATH, device=device)
 
+    #input_tensor.requires_grad_(True) ### debug remove
     with torch.no_grad():
         output = model(input_tensor)
+        #predicted_class = output.argmax(dim=1).item()
         R = torch.zeros_like(output)
         R[0, TARGET_CLASS] = output[0, TARGET_CLASS]
 
@@ -149,10 +161,11 @@ if __name__ == "__main__":
 
     # Try different LRP rules for comparison
     lrp_rules = [
-        #('epsilon', 1e-6),      # epsilon rule - often good baseline
-        #('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
-        #('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
-        #('gamma', 0.25),        # gamma rule
+        #('simple', 1e-6),      # epsilon rule - often good baseline
+        #('alphabeta', 2),     # alpha=2, beta=-1 (more aggressive)
+        ('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
+        ('gamma', 0.0),        # gamma rule
+        ('gamma', 0.25),
         ('gamma', 'heuristic')
     ]
 
@@ -173,9 +186,13 @@ if __name__ == "__main__":
                 print(f"R stats at layer {i}: R min={R_test.min().item():.2f}, max={R_test.max().item():.2f}, sum={R_test.sum().item():.2f}") 
         else: 
             # Propagate in reverse order
-            for module in reversed(modules):
-            
-                R_test = lrp(module, R_test, lrp_var=rule_name, param=param)
+            for i, module in enumerate(reversed(modules)):
+                if i == 37:
+                    R_test = lrp(module, R_test, lrp_var='first')
+                    print(f"idx {i}: handling pixel layer")
+                else:
+
+                    R_test = lrp(module, R_test, lrp_var=rule_name, param=param)
             
                 # Check for issues during propagation
                 if torch.isnan(R_test).any():

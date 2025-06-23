@@ -13,9 +13,9 @@ import matplotlib.pyplot as plt
 
 ### vars
 SUBSPACE_DIMS = [128, 128, 128, 128]
-IRRELEVANT_SUBSPACES = []  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
+IRRELEVANT_SUBSPACES = [3]  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
 U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_tensor.pt'
-IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa-basketball-img3.jpg'
+IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/img-3.jpg'
 OUTPUT_HEATMAP_PATH = 'lrp_heatmap.png'
 
 # "basketball" in ImageNet is class index 430 (zero‐indexed)
@@ -61,25 +61,25 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     
     # Sum across RGB channels to get spatial heatmap
     heatmap = attr.sum(axis=0)  # → (224, 224)
-    np.save(out_path.replace('.png', '_heatmap.npy'), heatmap)
-    print(f"Raw heatmap stats — min: {heatmap.min():.6f}, max: {heatmap.max():.6f}, mean: {heatmap.mean():.6f}")
+    #np.save(out_path.replace('.png', '_heatmap.npy'), heatmap)
+    #print(f"Raw heatmap stats — min: {heatmap.min():.6f}, max: {heatmap.max():.6f}, mean: {heatmap.mean():.6f}")
     
     # Method 1: Positive relevance only (your original approach)
-    heatmap_pos = np.maximum(heatmap, 0)
-    p99 = np.percentile(heatmap_pos, 94)
-    heatmap_pos = np.clip(heatmap_pos, 0, p99)
+    #heatmap_pos = np.maximum(heatmap, 0)
+    #p99 = np.percentile(heatmap_pos, 94)
+    #heatmap_pos = np.clip(heatmap_pos, 0, p99)
 
     #max_val_pos = heatmap_pos.max()
     
-    if p99 > 0:
-        heatmap_pos_norm = heatmap_pos / p99
-        plt.figure(figsize=(8, 8))
-        plt.imshow(heatmap_pos_norm, cmap='hot')
-        plt.axis('off')
-        plt.tight_layout()
-        plt.savefig(out_path.replace('.png', '_positive_only.png'), bbox_inches='tight', pad_inches=0)
-        plt.close()
-        print(f"Positive-only heatmap saved to '{out_path.replace('.png', '_positive_only.png')}'")
+    #if True:
+        #heatmap_pos_norm = heatmap_pos / max_val_pos
+        #plt.figure(figsize=(8, 8))
+        #plt.imshow(heatmap_pos_norm, cmap='hot')
+        #plt.axis('off')
+        #plt.tight_layout()
+        #plt.savefig(out_path.replace('.png', '_positive_only.png'), bbox_inches='tight', pad_inches=0)
+        #plt.close()
+        #print(f"Positive-only heatmap saved to '{out_path.replace('.png', '_positive_only.png')}'")
     
     # Method 2: Absolute values (recommended)
     #heatmap_abs = np.abs(heatmap)
@@ -97,7 +97,7 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
 
     # Method 3: Centered around zero with diverging colormap (outlier-protected)
     # This shows both positive (red) and negative (blue) contributions
-    heatmap_centered = heatmap.copy()
+    #heatmap_centered = heatmap.copy()
     # Protect against outliers using percentile clipping
     #pos_p99 = np.percentile(heatmap_centered[heatmap_centered > 0], 99) if np.any(heatmap_centered > 0) else 0
     #neg_p99 = np.percentile(np.abs(heatmap_centered[heatmap_centered < 0]), 99) if np.any(heatmap_centered < 0) else 0
@@ -106,17 +106,17 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     #clip_val = max(pos_p99, neg_p99)
     #clip_val = np.percentile(np.abs(heatmap), 97)
 
-    if True:
+    #if True:
     ## Clip outliers symmetrically
         #heatmap_centered_clipped = np.clip(heatmap_centered, -clip_val, clip_val)
    ### 
-        plt.figure(figsize=(8, 8))
-        plt.imshow(heatmap_centered, cmap='RdBu_r')
-        plt.axis('off')
-        plt.tight_layout()
-        plt.savefig(out_path.replace('.png', '_centered.png'), bbox_inches='tight', pad_inches=0)
-        plt.close()
-        print(f"Centered heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
+        #plt.figure(figsize=(8, 8))
+        #plt.imshow(heatmap_centered, cmap='bwr')
+        #plt.axis('off')
+        #plt.tight_layout()
+        #plt.savefig(out_path.replace('.png', '_centered.png'), bbox_inches='tight', pad_inches=0)
+        #plt.close()
+        #print(f"Centered heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
 
 
     
@@ -134,6 +134,19 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     #plt.close()
     #print(f"Percentile-normalized heatmap saved to '{out_path.replace('.png', '_pbn.png')}'")
 
+    heatmap_seismic = 10*((np.abs(heatmap)**3.0).mean()**(1.0/3))
+    from matplotlib.colors import ListedColormap
+    my_cmap = plt.cm.seismic(np.arange(plt.cm.seismic.N))
+    my_cmap[:,0:3] *=0.85
+    my_cmap = ListedColormap(my_cmap)
+    plt.figure()
+    plt.subplots_adjust(left=0,right=1,bottom=0,top=1)
+    plt.axis('off')
+    plt.imshow(heatmap, cmap=my_cmap, vmin=-heatmap_seismic, vmax=heatmap_seismic, interpolation='nearest')
+    plt.savefig(out_path.replace('.png', '_seismic.png'))
+    plt.close()
+
+    
 def get_augmented_vgg16_lrp_param(module_idx: int) -> float:
     """
     γ-schedule for LRP-γ on AugmentedVGG16, counting *from the output side* as we
@@ -146,13 +159,15 @@ def get_augmented_vgg16_lrp_param(module_idx: int) -> float:
     ── Conv2 + Conv1 blocks ─────────  0.50  (all remaining layers)
     """
     if module_idx <= 6:                         # classifier layers
-        return 0.0
+        return 0.01 # 0.0
     elif 7 <= module_idx <= 13:                 # Conv5
-        return 0.0
+        return 0.01 # 0.0
     elif 14 <= module_idx <= 22:                # 1×1 augmented + Conv4
-        return 0.10
+        if module_idx == 15 or module_idx == 16: # augmented
+            return 0.00 
+        return 0.10 # 0.10
     elif 23 <= module_idx <= 29:                # Conv3
-        return 0.25
+        return 0.25 # 0.25
     else:     
         if module_idx < 30 or module_idx > 39:
             print(f'unexpected module index {module_idx}') 
@@ -168,8 +183,13 @@ if __name__ == "__main__":
     ### 1. Load tensor U, ablate and move to GPU
     U = torch.load(U_FILEPATH)  # shape: (512, 512)
     U_ab, U_ab_T = ablate_subspace_matrix(U, SUBSPACE_DIMS, IRRELEVANT_SUBSPACES)
+
+    # uncomment to test with identity matrices
     #U_ab = torch.eye(512)
     #U_ab_T = torch.eye(512)
+
+    # uncomment to test with exact inverse of U_ab_T
+    #U_ab = torch.linalg.inv(U_ab_T)
 
 
     U_ab = U_ab.to(device)
@@ -202,7 +222,7 @@ if __name__ == "__main__":
     # Try different LRP rules for comparison
     lrp_rules = [
         #('epsilon', 1e-2),      # epsilon rule - often good baseline
-        #('alphabeta', 2.0),     # alpha=2, beta=-1 (more aggressive)
+        #('alphabeta', 0.75),     # alpha=2, beta=-1 (more aggressive)
         #('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
         ('gamma', 'heuristic'),        # gamma rule
         #('gamma', 0.0)
@@ -214,7 +234,7 @@ if __name__ == "__main__":
         
         if rule_name == 'gamma' and param == 'heuristic':
             for i, module in enumerate(reversed(modules)):
-                if i == 39: # i == 16
+                if i == 39: 
                     R_test = lrp(module, R_test, lrp_var='first')
                     print(f"handle pixel layer at idx {i}")
 
@@ -229,7 +249,9 @@ if __name__ == "__main__":
             # Propagate in reverse order
             for i, module in enumerate(reversed(modules)):
                 if i == 39:
-                    R_test = lrp(module, R_test, lrp_rule='first')
+                    R_test = lrp(module, R_test, lrp_var='first')
+                elif i == 16 or i == 15:
+                    R_test = lrp(module, R_test, lrp_var='simple')
                 else:               
                     R_test = lrp(module, R_test, lrp_var=rule_name, param=param)
                 if i == 14:
