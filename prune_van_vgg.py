@@ -181,8 +181,8 @@ class PruningFineTuner:
         # Data Acquisition
         get_dataset = {
             #"cifar10": dataset.get_cifar10,  # CIFAR-10
-                'imagenet': dataset.get_imagenet, # ImageNet
-                #'basketball_imagenet': dataset.get_basketball_imagenet
+            'imagenet': dataset.get_imagenet, # ImageNet
+            #'basketball_imagenet': dataset.get_basketball_imagenet
         }[self.args.data_type.lower()]
         train_dataset, test_dataset = get_dataset()
         print(f"train_dataset:{len(train_dataset)}, test_dataset:{len(test_dataset)}")
@@ -226,14 +226,14 @@ class PruningFineTuner:
             self.test_iter.append(self.niter)
 
             # FLOP calculation
-            sample_batch = torch.FloatTensor(1, 3, 224, 224).cuda()
-            self.model = add_flops_counting_methods(self.model)
-            self.model.eval().start_flops_count()
-            _ = self.model(sample_batch)
-            self.flop_val.append(flops_to_string(self.model.compute_average_flops_cost()))
-            self.num_param.append(get_model_parameters_number(self.model))
-            print('Flops:  {}'.format(flops_to_string(self.model.compute_average_flops_cost())))
-            print('Params: ' + get_model_parameters_number(self.model))
+            #sample_batch = torch.FloatTensor(1, 3, 224, 224).cuda()
+            #self.model = add_flops_counting_methods(self.model)
+            #self.model.eval().start_flops_count()
+            #_ = self.model(sample_batch)
+            #self.flop_val.append(flops_to_string(self.model.compute_average_flops_cost()))
+            #self.num_param.append(get_model_parameters_number(self.model))
+            #print('Flops:  {}'.format(flops_to_string(self.model.compute_average_flops_cost())))
+            #print('Params: ' + get_model_parameters_number(self.model))
 
         self.model.train()
 

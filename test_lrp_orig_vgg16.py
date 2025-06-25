@@ -35,7 +35,7 @@ def load_and_preprocess(image_path: str, device: torch.device):
     tensor = preprocess(img).unsqueeze(0).to(device)  # shape: (1,3,224,224)
     return tensor, img
 
-### hooks for augmented vgg16
+### hooks for vanilla vgg16
 def register_hooks(model):
     def save_input_output(mod, inp, out):
         mod.input = inp[0].detach().clone()
