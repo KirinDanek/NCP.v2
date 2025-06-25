@@ -177,7 +177,6 @@ class PruningFineTuner:
         from torchvision import datasets, transforms
         kwargs = {'num_workers': 1, 'pin_memory': True} if self.args.cuda else {}
         
-        train_dataset = datasets.ImageFolder()
         # Data Acquisition
         get_dataset = {
             #"cifar10": dataset.get_cifar10,  # CIFAR-10
