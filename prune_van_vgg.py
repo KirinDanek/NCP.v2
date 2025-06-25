@@ -252,13 +252,15 @@ class PruningFineTuner:
 
         if rank_filters:
             if self.args.relevance:  # lrp_based
-                output = self.prunner.forward_lrp(batch)
+                output = self.pruner.forward_lrp(batch)
 
                 T = torch.zeros_like(output)
                 for ii in range(len(label)):
                     T[ii,label[ii]] = 1.0
+                # debug: uncomment ^ and comment v if not pruning wrt target class only
+                #T[:, self.args.target_class_idx] = 1.0 
 
-                self.prunner.backward_lrp(T.data)
+                self.pruner.backward_lrp(T.data)
 
                 print('Train Epoch: [{}/{} ({:.0f}%)]'.format(
                     batch_idx * len(batch), len(self.train_loader.dataset),
@@ -267,7 +269,7 @@ class PruningFineTuner:
                 self.train_loss_batch += loss.item()
 
             else:  # gradient_based
-                output = self.prunner.forward(batch)
+                output = self.pruner.forward(batch)
                 loss = self.criterion(output, label)
                 loss.backward()
                 print('Train Epoch: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
@@ -304,15 +306,15 @@ class PruningFineTuner:
         # self.correct /= epoches
 
     def get_candidates_to_prune(self, num_filters_to_prune):
-        self.prunner.reset()
+        self.pruner.reset()
 
         self.train_epoch(rank_filters=True)
         # training 하면서 동시에 hook 써서 후보 찾기 #
         # (각 layer 마다 compute_rank 안에서 계산되어서 self.filter_ranks list에 저장이 된다.
 
-        self.prunner.normalize_ranks_per_layer()  # Normalization
+        self.pruner.normalize_ranks_per_layer()  # Normalization
 
-        return self.prunner.get_prunning_plan(num_filters_to_prune)
+        return self.pruner.get_pruning_plan(num_filters_to_prune)
 
     def forward_hook(self):
         # For Forward Hook
@@ -326,14 +328,14 @@ class PruningFineTuner:
         self.test_loss_tot = []
         self.test_acc_tot = []
         self.test_iter = []
-        self.flop_val =[]
+        #self.flop_val =[] # debug: commented out
         self.num_param = []
-        self.R_tot = []
+        #self.R_tot = [] # debug: commented out
         self.data_tot = []
         self.time_tot = []
         self.save_loss = True
 
-        # Get the accuracy before prunning
+        # Get the accuracy before pruning
         self.niter = 0
         self.temp = 0
         self.test()
@@ -348,10 +350,10 @@ class PruningFineTuner:
         iterations = int(float(number_of_filters) / num_filters_to_prune_per_iteration)
         iterations = int(iterations * self.args.total_pr) #up to 80%
 
-        # # print("Number of prunning iterations to reduce 67% filters", iterations)
+        # # print("Number of pruning iterations to reduce 67% filters", iterations)
 
-        R_tot, data_tot, time_tot = self.lrp()  # lrp using conventional model
-        self.R_tot.append(R_tot)
+        #R_tot, data_tot, time_tot = self.lrp()  # lrp using conventional model # debug: removed these two lines
+        #self.R_tot.append(R_tot)
 
         for kk in range(iterations):
             print("Ranking filters.. {}".format(kk))
@@ -364,8 +366,8 @@ class PruningFineTuner:
                     layers_prunned[layer_index] = 0
                 layers_prunned[layer_index] += 1
 
-            print("Layers that will be prunned", layers_prunned)  # 총 잘릴 layer 별 filter 수
-            print("Prunning filters.. ")
+            print("Layers that will be pruned", layers_prunned)  # 총 잘릴 layer 별 filter 수
+            print("Pruning filters.. ")
             model = self.model.cpu()  # 현재 모델 갖다가..
             for layer_index, filter_index in prune_targets:  # 하나씩 꺼내서 자르기 시작
                 model = prune_conv_layer_sequential(model, layer_index, filter_index, cuda_flag=self.args.cuda)
@@ -373,14 +375,14 @@ class PruningFineTuner:
             self.model = model.cuda() if self.args.cuda else model
 
             message = str(100 * float(self.total_num_filters()) / number_of_filters) + "%"
-            print("Filters prunned", str(message))
+            print("Filters pruned", str(message))
             self.test()  # 잘리고 나서 test 해봄
-            print("Fine tuning to recover from prunning iteration.")
+            print("Fine tuning to recover from pruning iteration.")
             optimizer = optim.SGD(self.model.parameters(), lr=self.args.lr, momentum=self.args.momentum)
             self.train(optimizer, epoches=10)
-            R_tot, data_tot, time_tot = self.lrp()
-            self.R_tot.append(R_tot)
-            del R_tot
+            #R_tot, data_tot, time_tot = self.lrp() # debug: removed these 3 lines
+            #self.R_tot.append(R_tot)
+            #del R_tot
 
         print("Finished. Going to fine tune the model a bit more")
         self.niter += 1
