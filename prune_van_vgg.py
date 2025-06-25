@@ -38,7 +38,8 @@ class FilterPruner:
         for name, module in self.model.classifier._modules.items():
             module.register_forward_hook(fhook)
 
-    ### do forward pass and prepare for backprop
+    ### do forward pass and prepare for LRP. will build separate forward
+    # funcs for gradient, etc
     def forward_lrp(self, x):
         in_size = x.size(0) ## batch size
         self.activation_to_layer = {} # activation index to actual conv layer
@@ -112,18 +113,45 @@ class FilterPruner:
                 else: 
                     R = lrp(module, R.data, lrp_var=relevance_method, param=param)
 
-    def forward(self, x):
-        self.activations = []
-        self.weights = []
-        self.gradients = []
-        self.grad_index = 0
-        self.activation_to_layer = {}
+    def normalize_ranks_per_layer(self):
+        for i in self.filter_ranks:
+            if self.args.relevance: ### if LRP, avg over trials (not normalize)
+                v = self.filter_ranks[i]
+                v = v / torch.sum(v) #  / num(dataset)
+                self.filter_ranks[i] = v.cpu()
+    
+    # re index the filters to prune so that indices align during pruning
+    def get_pruning_plan(self, num_filters_to_prune):
+        filters_to_prune = self.lowest_ranking_filters(num_filters_to_prune)
+        #filters_to_prune: filters to be pruned 1) layer number, 2) filter number, 3) its value
 
-        activation_index = 0
-        for layer, (name, module) in enumerate(self.model.features._modules.items()):
-            x = module(x)
-            if isinstance(module, torch.nn.modules.conv.Conv2d):
-                x.register_hook(self.compute_rank)
+        # after each of the k filters are pruned, 
+        # the filter index of the next filters change since the model is smaller
+        filters_to_prune_per_layer = {}
+        for (l, f, _) in filters_to_prune:
+            if l not in filters_to_prune_per_layer:
+                filters_to_prune_per_layer[l] = []
+            filters_to_prune_per_layer[l].append(f)
 
-                #### TODO: make sure hooks are being computed 
-                ## compatibly with LRP implementation
+        for l in filters_to_prune_per_layer:
+            filters_to_prune_per_layer[l] = sorted(filters_to_prune_per_layer[l])
+            ## filter at index idx shifts down by however many filters
+            # have already been pruned (i)
+            for i in range(len(filters_to_prune_per_layer[l])):
+                filters_to_prune_per_layer[l][i] = filters_to_prune_per_layer[l][i] - i
+
+        filters_to_prune = []
+        for l in filters_to_prune_per_layer:
+            for i in filters_to_prune_per_layer[l]:
+                filters_to_prune.append((l, i))
+
+        return filters_to_prune ## =list of (layer_num, filter_num)
+    # num: number of filters to prune
+    def lowest_ranking_filters(self, num):
+        data = []
+        for i in sorted(self.filter_ranks.keys()):
+            for j in range(self.filter_ranks[i].size(0)):
+                #(layer idx, filter idx, score)
+                data.append((self.activation_to_layer[i], j, self.filter_ranks[i][j]))
+        # return num tuples w/ smallest relevance score
+        return nsmallest(num, data, itemgetter(2)) 
