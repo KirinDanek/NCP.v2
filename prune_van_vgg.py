@@ -180,8 +180,8 @@ class PruningFineTuner:
         # Data Acquisition
         get_dataset = {
             #"cifar10": dataset.get_cifar10,  # CIFAR-10
-            'imagenet': dataset.get_imagenet, # ImageNet
-            #'basketball_imagenet': dataset.get_basketball_imagenet
+            #'imagenet': dataset.get_imagenet, # ImageNet
+            'basketball_imagenet': dataset.get_basketball_imagenet
         }[self.args.data_type.lower()]
         train_dataset, test_dataset = get_dataset()
         print(f"train_dataset:{len(train_dataset)}, test_dataset:{len(test_dataset)}")
