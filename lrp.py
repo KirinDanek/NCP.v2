@@ -17,6 +17,7 @@ def lrp(module, R, lrp_var=None, param=None):
             return R
         elif isinstance(module, torch.nn.modules.activation.LogSoftmax): ### just multiply r by layer input
             return module.input * R
+            #return R # debug, remove
         elif isinstance(module, torch.nn.modules.pooling.AvgPool2d) or isinstance(module,
                                                                                   torch.nn.modules.pooling.MaxPool2d):
             return Pooling(module, R, lrp_var, param)
