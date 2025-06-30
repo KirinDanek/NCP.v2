@@ -170,7 +170,7 @@ class PruningFineTuner:
 
         self.criterion = nn.CrossEntropyLoss()
         self.pruner = FilterPruner(self.model, args)
-        self.model.train() ### DEBUG: necessary?
+        self.model.train() ### set to train mode
         self.save_loss = False
 
     def setup_dataloaders(self):

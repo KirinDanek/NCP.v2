@@ -1,6 +1,7 @@
 import argparse
 import torch
 from torchvision import models
+import torch.nn as nn
 from prune_van_vgg import PruningFineTuner
 
 def get_test_args():
@@ -25,14 +26,20 @@ def get_test_args():
 def test_pruning_pipeline():
     args = get_test_args()
     model = models.vgg16(pretrained=True)
+    model.classifier[6] = nn.Linear(4096, 2) # for binary classification
     if args.cuda:
         model = model.cuda()
 
     print("Initializing PruningFineTuner...")
     tuner = PruningFineTuner(args, model)
 
-    print("Running single training epoch (for testing)...")
+    print("Training new 2-d output layer...")
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    # only train output layer
+    for param in model.parameters():
+        param.requires_grad = False
+    for param in model.classifier[6].parameters():
+        param.requires_grad = True
     tuner.train_epoch(optimizer=optimizer)
 
     print("Getting pruning candidates...")

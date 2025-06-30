@@ -37,6 +37,9 @@ class FilterPruner:
     def forward_hook(self):
         for name, module in self.model.features._modules.items():
             module.register_forward_hook(fhook)
+        self.model.encode.register_forward_hook(fhook) # debug
+        self.model.decode.register_forward_hook(fhook)
+            
         for name, module in self.model.classifier._modules.items():
             module.register_forward_hook(fhook)
 
@@ -62,18 +65,32 @@ class FilterPruner:
     
         if relevance_method == 'gamma' and param == 'heuristic': ## todo: sum absolute vals of relevance for pruning
             # get gamma heuristic value from reverse index
-            def get_vgg16_lrp_param(module_idx: int) -> float:
+            def get_augmented_vgg16_lrp_param(module_idx: int) -> float:
+                """
+                γ-schedule for LRP-γ on AugmentedVGG16, counting *from the output side* as we
+                iterate through reversed(modules).
+
+                ── classifier head ─────────────── 0.00
+                ── Conv5 block  ─────────────────  0.00
+                ── Augmented 1×1 + Conv4 block ─  0.10
+                ── Conv3 block  ─────────────────  0.25
+                ── Conv2 + Conv1 blocks ─────────  0.50  (all remaining layers)
+                """
                 if module_idx <= 6:                         # classifier layers
-                    return 0.0 # 0.0
+                    return 0.01 # 0.0
                 elif 7 <= module_idx <= 13:                 # Conv5
-                    return 0.0 #0.0
-                elif 14 <= module_idx <= 20:                # 1×1 augmented + Conv4
+                    return 0.01 # 0.0
+                elif 14 <= module_idx <= 22:                # 1×1 augmented + Conv4
+                    if module_idx == 15 or module_idx == 16: # augmented
+                        return 0.00 
                     return 0.10 # 0.10
-                elif 21 <= module_idx <= 27:                # Conv3
+                elif 23 <= module_idx <= 29:                # Conv3
                     return 0.25 # 0.25
-                elif module_idx < 28 or module_idx > 37:
-                    print(f'unexpected module index {module_idx}')                                       
-                return 0.50 # Conv2, Conv1
+                else:     
+                    if module_idx < 30 or module_idx > 39:
+                        print(f'unexpected module index {module_idx}') 
+                                                        # Conv2, Conv1, and anything earlier
+                    return 0.50
             
             for i, module in enumerate(reversed(list(self.model.features) + list(self.model.classifier))):
                 if isinstance(module, torch.nn.modules.conv.Conv2d):
@@ -92,7 +109,7 @@ class FilterPruner:
                 if i == 37:
                     R = lrp(module, R.data, lrp_var='first')
                 else:    
-                    dynamic_param = get_vgg16_lrp_param(i)
+                    dynamic_param = get_augmented_vgg16_lrp_param(i)
                     R = lrp(module, R.data, lrp_var=relevance_method, param=dynamic_param)
 
         else: ### POSITIVE RELEVANCE ONLY
@@ -376,6 +393,8 @@ class PruningFineTuner:
             self.model = model.cuda() if self.args.cuda else model
 
             message = str(100 * float(self.total_num_filters()) / number_of_filters) + "%"
+            ### note: this is calculating the pct of remaining filters
+            # (not pct of pruned filters)
             print("Filters pruned", str(message))
             self.test()  # 잘리고 나서 test 해봄
             print("Fine tuning to recover from pruning iteration.")

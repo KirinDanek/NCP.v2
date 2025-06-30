@@ -189,7 +189,7 @@ def Convolution(module, R, lrp_var=None, param=None):
 
         lowest, highest = get_normalized_bounds(MEAN, STD, device=device) ## hardcoded to 3 channels (RGB) 
 
-        print(f"Pixel-layer attributions normalized to [{lowest}, {highest}]")
+        #print(f"Pixel-layer attributions normalized to [{lowest}, {highest}]")
         V = module.weight
         VN = module.weight.clamp(max=0.0)
         VP = module.weight.clamp(min=0.0)
