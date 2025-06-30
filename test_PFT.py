@@ -40,13 +40,28 @@ def test_pruning_pipeline():
         param.requires_grad = False
     for param in model.classifier[6].parameters():
         param.requires_grad = True
-    tuner.train_epoch(optimizer=optimizer)
 
-    print("Getting pruning candidates...")
-    candidates = tuner.get_candidates_to_prune(num_filters_to_prune=10)
-    print("Top 10 candidates to prune:", candidates)
+    criterion = torch.nn.CrossEntropyLoss()
+    model.train()
+    for epoch in range(15):  
+        running_loss = 0.0
+        for batch_idx, (data, target) in enumerate(tuner.train_loader):
+            if args.cuda:
+                data, target = data.cuda(), target.cuda()
 
-    print("Running full pruning pipeline (short version)...")
+            optimizer.zero_grad()
+            output = model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item()
+            if batch_idx % 10 == 0:
+                print(f"Epoch {epoch+1} | Batch {batch_idx} | Loss: {loss.item():.4f}")
+        print(f"Epoch {epoch+1} complete. Avg Loss: {running_loss / len(tuner.train_loader):.4f}")
+
+
+    print("Running full pruning pipeline...")
     tuner.prune()
 
     ### TODO: save model weights and mid-pruning metrics
