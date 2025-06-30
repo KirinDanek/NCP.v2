@@ -179,4 +179,4 @@ def get_basketball_imagenet(transform=None, root_dir=None):
     test_size = len(dataset) - train_size
     train, test = random_split(dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
     
-    return DataLoader(train, batch_size=32, shuffle=True), DataLoader(test, batch_size=32)
+    return train, test
