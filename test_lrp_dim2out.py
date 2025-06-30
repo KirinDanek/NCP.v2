@@ -17,7 +17,7 @@ import torch.optim as optim
 SUBSPACE_DIMS = [128, 128, 128, 128]
 IRRELEVANT_SUBSPACES = [3]  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
 U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_tensor.pt'
-IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/img-3.jpg'
+IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa_basketball_test_images/img-3.jpg'
 OUTPUT_HEATMAP_PATH = 'lrp_heatmap.png'
 
 # "basketball" in binary imagenet is 0 (not basketball is 1)

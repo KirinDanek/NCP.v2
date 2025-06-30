@@ -18,7 +18,7 @@ import torch
 from PIL import Image
 from torchvision import datasets
 from torchvision import transforms
-from torch.utils.data import random_split
+from torch.utils.data import random_split, DataLoader
 
 class ImageNetDatasetValidation(torch.utils.data.Dataset):
     """ This class represents the ImageNet Validation Dataset"""
@@ -179,4 +179,4 @@ def get_basketball_imagenet(transform=None, root_dir=None):
     test_size = len(dataset) - train_size
     train, test = random_split(dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
     
-    return train, test
+    return DataLoader(train, batch_size=32, shuffle=True), DataLoader(test, batch_size=32)
