@@ -171,7 +171,7 @@ class PruningFineTuner:
         self.criterion = nn.CrossEntropyLoss()
         self.pruner = FilterPruner(self.model, args)
         self.model.train() ### set to train mode
-        self.save_loss = False
+        self.save_loss = True
 
     def setup_dataloaders(self):
         from torchvision import datasets, transforms
@@ -375,7 +375,7 @@ class PruningFineTuner:
             self.model = model.cuda() if self.args.cuda else model
 
             message = str(100 * float(self.total_num_filters()) / number_of_filters) + "%"
-            print("Filters pruned", str(message))
+            print("Filters remaining", str(message))
             self.test()  # 잘리고 나서 test 해봄
             print("Fine tuning to recover from pruning iteration.")
             optimizer = optim.SGD(self.model.parameters(), lr=self.args.lr, momentum=self.args.momentum)

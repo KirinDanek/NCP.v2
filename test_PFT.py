@@ -17,8 +17,8 @@ def get_test_args():
     # pruning config
     parser.add_argument('--relevance', action='store_true', default=True)
     parser.add_argument('--method_type', type=str, default='lrp')
-    parser.add_argument('--pr_step', type=float, default=0.01)      # prune 1% per iteration
-    parser.add_argument('--total_pr', type=float, default=0.05)     # prune 5% total
+    parser.add_argument('--pr_step', type=float, default=0.05)      # prune % per iteration
+    parser.add_argument('--total_pr', type=float, default=0.8)     # prune % total
 
     args = parser.parse_args([])
     return args
@@ -48,6 +48,21 @@ def test_pruning_pipeline():
 
     print("Running full pruning pipeline (short version)...")
     tuner.prune()
+
+    ### TODO: save model weights and mid-pruning metrics
+    # Collect pruned structure info
+    pruned_structure = [m.out_channels for m in tuner.model.features if isinstance(m, torch.nn.Conv2d)]
+
+    # Save model + pruner metadata
+    torch.save({
+        'state_dict': tuner.model.state_dict(),
+        'pruned_structure': pruned_structure,
+        'train_loss': tuner.train_loss_tot,
+        'test_loss': tuner.test_loss_tot,
+        'test_acc': tuner.test_acc_tot,
+        'test_iter': tuner.test_iter,
+    }, "pruned_checkpoint.pth")
+
 
 if __name__ == "__main__":
     test_pruning_pipeline()
