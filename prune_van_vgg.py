@@ -175,7 +175,7 @@ class PruningFineTuner:
 
     def setup_dataloaders(self):
         from torchvision import datasets, transforms
-        kwargs = {'num_workers': 1, 'pin_memory': True} if self.args.cuda else {}
+        kwargs = {'num_workers': 0, 'pin_memory': True} if self.args.cuda else {}
         
         # Data Acquisition
         get_dataset = {
