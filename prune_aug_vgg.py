@@ -18,7 +18,8 @@ import data as dataset
 from operator import itemgetter
 from heapq import nsmallest
 import os
-
+### the layers we disallow pruning on (ie before[-1], encode, decode)
+DISALLOWED_LAYERS = {23, 24, 21} # debug: double check indices
 
 def fhook(self, input, output):
     self.input = input[0]
@@ -37,9 +38,10 @@ class FilterPruner:
     def forward_hook(self):
         for name, module in self.model.features._modules.items():
             module.register_forward_hook(fhook)
-        self.model.encode.register_forward_hook(fhook) # debug
-        self.model.decode.register_forward_hook(fhook)
-            
+        if hasattr(self.model, "encode"):
+            self.model.encode.register_forward_hook(fhook)
+        if hasattr(self.model, "decode"):
+            self.model.decode.register_forward_hook(fhook)
         for name, module in self.model.classifier._modules.items():
             module.register_forward_hook(fhook)
 
@@ -51,19 +53,39 @@ class FilterPruner:
         self.grad_index = 0
 
         self.activation_index = 0 ## counts only conv layers
-        for layer, (name, module) in enumerate(self.model.features._modules.items()):
+        for layer, module in enumerate(self.model.before):
             x = module(x)
             if isinstance(module, torch.nn.modules.conv.Conv2d):
                 self.activation_to_layer[self.activation_index] = layer
                 self.activation_index += 1
-                
+        layer_offset = len(self.model.before)
+
+        #enc and decode if not deleted
+        # not prunable
+        if hasattr(self.model, "encode") and hasattr(self.model, "decode"):
+            x = self.model.encode(x)
+            x = self.model.decode(x)
+            layer_offset +=2
+        
+        for layer, module in enumerate(self.model.after):
+            x = module(x)
+            if isinstance(module, nn.Conv2d):
+                self.activation_to_layer[self.activation_index] = layer_offset + layer
+                self.activation_index += 1
+        #flatten and classify
         x = x.view(in_size, -1)
         return self.model.classifier(x)
     
     #### DEBUG: ONLY BUILT TO RUN ON GAMMA HEURISTIC OR POSITIVE RELEVANCE BACKPROP
     def backward_lrp(self, R, relevance_method='z', param=1):
-    
-        if relevance_method == 'gamma' and param == 'heuristic': ## todo: sum absolute vals of relevance for pruning
+        modules = list(self.model.before)
+        if hasattr(self.model, "encode") and hasattr(self.model, "decode"):
+            modules += [self.model.encode, self.model.decode]
+        modules += list(self.model.after)
+        modules += list(self.model.classifier)
+        modules = list(reversed(modules))
+
+        if relevance_method == 'gamma' and param == 'heuristic': 
             # get gamma heuristic value from reverse index
             def get_augmented_vgg16_lrp_param(module_idx: int) -> float:
                 """
@@ -92,7 +114,7 @@ class FilterPruner:
                                                         # Conv2, Conv1, and anything earlier
                     return 0.50
             
-            for i, module in enumerate(reversed(list(self.model.features) + list(self.model.classifier))):
+            for i, module in enumerate(modules):
                 if isinstance(module, torch.nn.modules.conv.Conv2d):
                     activation_index = self.activation_index - self.grad_index - 1
                     ### summing over batch + spatial dims (per-filter relevance)
@@ -106,14 +128,14 @@ class FilterPruner:
                     ## add batch scores to total
                     self.filter_ranks[activation_index] += values
                     self.grad_index += 1
-                if i == 37:
+                if i == len(modules)-1:
                     R = lrp(module, R.data, lrp_var='first')
                 else:    
                     dynamic_param = get_augmented_vgg16_lrp_param(i)
                     R = lrp(module, R.data, lrp_var=relevance_method, param=dynamic_param)
 
         else: ### POSITIVE RELEVANCE ONLY
-            for i, module in enumerate(reversed(list(self.model.features) + list(self.model.classifier))):
+            for i, module in enumerate(modules):
                 if isinstance(module, torch.nn.modules.conv.Conv2d):
                     activation_index = self.activation_index - self.grad_index - 1
                     ### summing over batch + spatial dims (per-filter relevance)
@@ -127,7 +149,7 @@ class FilterPruner:
                     ## add batch scores to total
                     self.filter_ranks[activation_index] += values
                     self.grad_index += 1
-                if i == 37: ### debug: hardcoded first conv layer index
+                if i == len(modules)-1:
                     R = lrp(module, R.data, lrp_var='first')
                 else: 
                     R = lrp(module, R.data, lrp_var=relevance_method, param=param)
@@ -170,6 +192,9 @@ class FilterPruner:
     def lowest_ranking_filters(self, num):
         data = []
         for i in sorted(self.filter_ranks.keys()):
+            layer_idx = self.activation_to_layer[i]
+            if layer_idx in DISALLOWED_LAYERS: #debug: skipping disallowed conv layers
+                continue
             for j in range(self.filter_ranks[i].size(0)):
                 #(layer idx, filter idx, score)
                 data.append((self.activation_to_layer[i], j, self.filter_ranks[i][j]))
@@ -188,12 +213,12 @@ class PruningFineTuner:
 
         self.criterion = nn.CrossEntropyLoss()
         self.pruner = FilterPruner(self.model, args)
-        self.model.train() ### DEBUG: necessary?
-        self.save_loss = False
+        self.model.train()
+        self.save_loss = True
 
     def setup_dataloaders(self):
         from torchvision import datasets, transforms
-        kwargs = {'num_workers': 1, 'pin_memory': True} if self.args.cuda else {}
+        kwargs = {'num_workers': 0, 'pin_memory': True} if self.args.cuda else {}
         
         # Data Acquisition
         get_dataset = {
@@ -224,7 +249,11 @@ class PruningFineTuner:
             if self.args.cuda:
                 data, target = data.cuda(), target.cuda()
             data, target = Variable(data), Variable(target)
-            output = self.model(data)
+            if hasattr(self.model, "encode") and hasattr(self.model, "decode"):
+                output = self.model(data)
+            else:
+                x = self.model.features(data)
+                output = self.model.classifier(x)
 
             test_loss += self.criterion(output, target).item()
             # get the index of the max log-probability
@@ -295,7 +324,9 @@ class PruningFineTuner:
                     100. * batch_idx / len(self.train_loader), loss.item()))
                 self.train_loss_batch += loss.item()
         else:
-            loss = self.criterion(self.model(batch), label)
+            x = self.model.features(batch)
+            output = self.model.classifier(x)
+            loss = self.criterion(output, label)
             loss.backward()
             optimizer.step()
             print('Train Epoch: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
@@ -306,9 +337,14 @@ class PruningFineTuner:
     def total_num_filters(self):
         # Conv layer의 모든 filter 수를 counting
         filters = 0
-        for name, module in self.model.features._modules.items():
+        for module in self.model.features: #debug: don't count filters from encode and decode
             if isinstance(module, torch.nn.modules.conv.Conv2d):
-                filters = filters + module.out_channels
+                if hasattr(self.model, 'encode') and module is self.model.encode:
+                    continue
+                if hasattr(self.model, 'decode') and module is self.model.decode:
+                    continue
+                filters += module.out_channels
+
         return filters
 
     def train(self, optimizer=None, epoches=10):
@@ -359,9 +395,13 @@ class PruningFineTuner:
         self.test()
         self.model.train()
 
-        # Make sure all the layers are trainable
+        # Make sure all the layers are trainable except for augmented layers
         for param in self.model.features.parameters():
             param.requires_grad = True
+        for param in self.model.encode.parameters():
+            param.requires_grad = False
+        for param in self.model.decode.parameters():
+            param.requires_grad = False
 
         number_of_filters = self.total_num_filters()
         num_filters_to_prune_per_iteration = int(number_of_filters * self.args.pr_step)  # 0.05 (5%) -> 0.01 (1%) temporally
@@ -406,5 +446,15 @@ class PruningFineTuner:
 
         print("Finished. Going to fine tune the model a bit more")
         self.niter += 1
+
+        ## remove encode and decode before final fine tuning
+        self.model.features = nn.Sequential(*list(self.model.before)+list(self.model.after))
+        del self.model.encode
+        del self.model.decode
+        del self.model.before
+        del self.model.after
+        # final fine tuning on all layers
+        for param in self.model.features.parameters():
+            param.requires_grad = True
         self.train(optimizer, epoches=15)
 

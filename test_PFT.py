@@ -2,7 +2,14 @@ import argparse
 import torch
 from torchvision import models
 import torch.nn as nn
-from prune_van_vgg import PruningFineTuner
+from AugmentedVGG16 import *
+
+USE_AUGMENTED_MODEL=True
+SUBSPACE_DIMS = [128, 128, 128, 128]
+IRRELEVANT_SUBSPACES = [3]  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
+U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_tensor.pt'
+
+
 
 def get_test_args():
     parser = argparse.ArgumentParser()
@@ -25,12 +32,24 @@ def get_test_args():
 
 def test_pruning_pipeline():
     args = get_test_args()
-    model = models.vgg16(pretrained=True)
+
+    if USE_AUGMENTED_MODEL:
+        U = torch.load(U_FILEPATH)  # shape: (512, 512)
+        U_ab, U_ab_T = ablate_subspace_matrix(U, SUBSPACE_DIMS, IRRELEVANT_SUBSPACES)
+        model = AugmentedVGG16(U_ab, U_ab_T)
+    else:
+        model = models.vgg16(pretrained=True)
+        
     model.classifier[6] = nn.Linear(4096, 2) # for binary classification
     if args.cuda:
         model = model.cuda()
 
     print("Initializing PruningFineTuner...")
+    if USE_AUGMENTED_MODEL:
+        from prune_aug_vgg import PruningFineTuner
+    else:
+        from prune_van_vgg import PruningFineTuner
+        
     tuner = PruningFineTuner(args, model)
 
     print("Training new 2-d output layer...")
@@ -61,10 +80,11 @@ def test_pruning_pipeline():
         print(f"Epoch {epoch+1} complete. Avg Loss: {running_loss / len(tuner.train_loader):.4f}")
 
 
-    print("Running full pruning pipeline...")
+    print("Pruning...")
     tuner.prune()
 
-    ### TODO: save model weights and mid-pruning metrics
+    ### Save model weights and mid-pruning metrics
+    #note: if augmented, augmented layers are removed prior to final fine tuning
     # Collect pruned structure info
     pruned_structure = [m.out_channels for m in tuner.model.features if isinstance(m, torch.nn.Conv2d)]
 
