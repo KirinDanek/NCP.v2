@@ -139,18 +139,19 @@ class FilterPruner:
         elif relevance_method == 'z' and param == 1: ### POSITIVE RELEVANCE ONLY
             for i, module in enumerate(modules):
                 if isinstance(module, torch.nn.modules.conv.Conv2d):
-                    activation_index = self.activation_index - self.grad_index - 1
-                    ### summing over batch + spatial dims (per-filter relevance)
-                    ## shape (num_filters,)
-                    values = torch.sum(R, dim=0, keepdim=True).sum(dim=2, keepdim=True).sum(dim=3, keepdim=True)[0, :, 0, 0].data
+                    if not (self.model.augmented and (module is self.model.encode or module is self.model.decode)):### debug: include this for gamma case
+                        activation_index = self.activation_index - self.grad_index - 1
+                        ### summing over batch + spatial dims (per-filter relevance)
+                        ## shape (num_filters,)
+                        values = torch.sum(R, dim=0, keepdim=True).sum(dim=2, keepdim=True).sum(dim=3, keepdim=True)[0, :, 0, 0].data
 
-                    if activation_index not in self.filter_ranks:
-                        self.filter_ranks[activation_index] = torch.FloatTensor(
-                            R.size(1)).zero_().cuda() if self.args.cuda else torch.FloatTensor(
-                            R.size(1)).zero_()
-                    ## add batch scores to total
-                    self.filter_ranks[activation_index] += values
-                    self.grad_index += 1
+                        if activation_index not in self.filter_ranks:
+                            self.filter_ranks[activation_index] = torch.FloatTensor(
+                                R.size(1)).zero_().cuda() if self.args.cuda else torch.FloatTensor(
+                                R.size(1)).zero_()
+                        ## add batch scores to total
+                        self.filter_ranks[activation_index] += values
+                        self.grad_index += 1
                 if i == len(modules)-1:
                     R = lrp(module, R.data, lrp_var='first')
                 else: 
