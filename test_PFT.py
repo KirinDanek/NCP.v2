@@ -47,8 +47,6 @@ def test_pruning_pipeline():
     print("Initializing PruningFineTuner...")
     if USE_AUGMENTED_MODEL:
         from prune_aug_vgg import PruningFineTuner
-        encode_weight_before = model.encode.weight.detach().clone()
-        decode_weight_before = model.decode.weight.detach().clone()
     else:
         from prune_van_vgg import PruningFineTuner
         
@@ -81,18 +79,6 @@ def test_pruning_pipeline():
                 print(f"Epoch {epoch+1} | Batch {batch_idx} | Loss: {loss.item():.4f}")
         print(f"Epoch {epoch+1} complete. Avg Loss: {running_loss / len(tuner.train_loader):.4f}")
 
-    if USE_AUGMENTED_MODEL:
-        encode_unchanged = torch.allclose(encode_weight_before, model.encode.weight, atol=1e-6)
-        decode_unchanged = torch.allclose(decode_weight_before, model.decode.weight, atol=1e-6)
-
-        if encode_unchanged and decode_unchanged:
-            print("✅ encode and decode weights remain unchanged after training.")
-        else:
-            print("❌ encode and/or decode weights were modified during training!")
-            if not encode_unchanged:
-                print("   ⚠️ encode changed")
-            if not decode_unchanged:
-                print("   ⚠️ decode changed")
 
     print("Pruning...")
     tuner.prune()

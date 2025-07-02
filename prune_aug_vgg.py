@@ -416,12 +416,16 @@ class PruningFineTuner:
         self.model.train()
 
         # Make sure all the layers are trainable except for augmented layers
-        for param in self.model.features.parameters():
+        for param in self.model.before.parameters():
             param.requires_grad = True
         for param in self.model.encode.parameters():
             param.requires_grad = False
         for param in self.model.decode.parameters():
             param.requires_grad = False
+        for param in self.model.after.parameters():
+            param.requires_grad = True
+        for param in self.model.classifier.parameters():
+            param.requires_grad = True
 
         number_of_filters = self.total_num_filters()
         num_filters_to_prune_per_iteration = int(number_of_filters * self.args.pr_step)  # 0.05 (5%) -> 0.01 (1%) temporally
