@@ -1,5 +1,6 @@
 import torch
 from torch.nn.utils import prune as torch_prune
+import torch.nn as nn
 import numpy as np
 
 def prune_conv_layer(model, layer_index, filter_index, criterion = 'lrp', cuda_flag = False):
@@ -67,9 +68,9 @@ def prune_conv_layer_sequential(model, layer_index, filter_index, cuda_flag=Fals
     next_conv = None
     offset = 1
 
-    while layer_index + offset < len(model.features._modules.items()):  # 전체 network의 layer 수보다 클때까지 while문 반복
+    while layer_index + offset < len(conv_seq._modules.items()):  # 전체 network의 layer 수보다 클때까지 while문 반복
         # res =  model.features._modules.items()[layer_index+offset]
-        res = list(model.features._modules.items())[layer_index + offset]
+        res = list(conv_seq._modules.items())[layer_index + offset]
         if isinstance(res[1], torch.nn.modules.conv.Conv2d):  # 현재 layer를 기준으로 다음 layer가 conv layer이냐?
             next_name, next_conv = res
             break
@@ -131,18 +132,18 @@ def prune_conv_layer_sequential(model, layer_index, filter_index, cuda_flag=Fals
 
     if not next_conv is None:
         features = torch.nn.Sequential(
-            *(replace_layers(model.features, i, [layer_index, layer_index + offset],
-                             [new_conv, next_new_conv]) for i, _ in enumerate(model.features)))
-        del model.features
+            *(replace_layers(conv_seq, i, [layer_index, layer_index + offset],
+                             [new_conv, next_new_conv]) for i, _ in enumerate(conv_seq)))
+        del conv_seq
         del conv
 
-        model.features = features
+        conv_seq = features
 
     else:
         # Prunning the last conv layer. This affects the first linear layer of the classifier.
-        model.features = torch.nn.Sequential(
-            *(replace_layers(model.features, i, [layer_index], \
-                             [new_conv]) for i, _ in enumerate(model.features)))
+        conv_seq = torch.nn.Sequential(
+            *(replace_layers(conv_seq, i, [layer_index], \
+                             [new_conv]) for i, _ in enumerate(conv_seq)))
         layer_index = 0
         old_linear_layer = None
         for _, module in model.classifier._modules.items():
@@ -180,5 +181,17 @@ def prune_conv_layer_sequential(model, layer_index, filter_index, cuda_flag=Fals
         del next_conv
         del conv
         model.classifier = classifier
+
+        # After replacing conv_seq
+    if hasattr(model, "before"):
+        total_len = len(model.before)
+        model.before = nn.Sequential(*[conv_seq[i] for i in range(total_len)])
+        if hasattr(model, "encode"):
+            model.encode = conv_seq[total_len]
+            model.decode = conv_seq[total_len + 1]
+            total_len += 2
+        model.after = nn.Sequential(*[conv_seq[i] for i in range(total_len, len(conv_seq))])
+    else:
+        model.features = conv_seq
 
     return model
