@@ -68,7 +68,7 @@ def test_pruning_pipeline():
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
 
-            optimizer.zero_grad()
+            optimizer.zero_grad() # clear gradients 
             output = model(data)
             loss = criterion(output, target)
             loss.backward()

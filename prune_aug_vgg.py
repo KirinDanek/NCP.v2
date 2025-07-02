@@ -36,19 +36,13 @@ class FilterPruner:
         self.forward_hook()
 
     def forward_hook(self):
-        if hasattr(self.model, "before") and hasattr(self.model, "after"):
-            for module in self.model.before:
-                module.register_forward_hook(fhook)
-            if hasattr(self.model, "encode"):
-                self.model.encode.register_forward_hook(fhook)
-            if hasattr(self.model, "decode"):
-                self.model.decode.register_forward_hook(fhook)
-            for module in self.model.after:
-                module.register_forward_hook(fhook)
-        elif hasattr(self.model, "features"):
-            for module in self.model.features:
-                module.register_forward_hook(fhook)
-
+        for module in self.model.before:
+            module.register_forward_hook(fhook)
+        if self.model.augmented:
+            self.model.encode.register_forward_hook(fhook)
+            self.model.decode.register_forward_hook(fhook)
+        for module in self.model.after:
+            module.register_forward_hook(fhook)
         for module in self.model.classifier:
             module.register_forward_hook(fhook)
 
@@ -68,9 +62,9 @@ class FilterPruner:
                 self.activation_index += 1
         layer_offset = len(self.model.before)
 
-        #enc and decode if not deleted
+        #enc and decode if augmented
         # not prunable
-        if hasattr(self.model, "encode") and hasattr(self.model, "decode"):
+        if self.model.augmented:
             x = self.model.encode(x)
             x = self.model.decode(x)
             layer_offset +=2
@@ -87,7 +81,7 @@ class FilterPruner:
     #### DEBUG: ONLY BUILT TO RUN ON GAMMA HEURISTIC OR POSITIVE RELEVANCE BACKPROP
     def backward_lrp(self, R, relevance_method='z', param=1):
         modules = list(self.model.before)
-        if hasattr(self.model, "encode") and hasattr(self.model, "decode"):
+        if self.model.augmented:
             modules += [self.model.encode, self.model.decode]
         modules += list(self.model.after)
         modules += list(self.model.classifier)
@@ -142,7 +136,7 @@ class FilterPruner:
                     dynamic_param = get_augmented_vgg16_lrp_param(i)
                     R = lrp(module, R.data, lrp_var=relevance_method, param=dynamic_param)
 
-        else: ### POSITIVE RELEVANCE ONLY
+        elif relevance_method == 'z' and param == 1: ### POSITIVE RELEVANCE ONLY
             for i, module in enumerate(modules):
                 if isinstance(module, torch.nn.modules.conv.Conv2d):
                     activation_index = self.activation_index - self.grad_index - 1
@@ -161,6 +155,8 @@ class FilterPruner:
                     R = lrp(module, R.data, lrp_var='first')
                 else: 
                     R = lrp(module, R.data, lrp_var=relevance_method, param=param)
+        else: 
+            raise NotImplementedError
 
     def normalize_ranks_per_layer(self):
         for i in self.filter_ranks:
@@ -199,6 +195,8 @@ class FilterPruner:
     # num: number of filters to prune
     def lowest_ranking_filters(self, num):
         data = []
+        if self.model.augmented == False:
+            raise NotImplementedError
         for i in sorted(self.filter_ranks.keys()):
             layer_idx = self.activation_to_layer[i]
             if layer_idx in DISALLOWED_LAYERS: #debug: skipping disallowed conv layers
@@ -257,11 +255,7 @@ class PruningFineTuner:
             if self.args.cuda:
                 data, target = data.cuda(), target.cuda()
             data, target = Variable(data), Variable(target)
-            if hasattr(self.model, "encode") and hasattr(self.model, "decode"):
-                output = self.model(data)
-            else:
-                x = self.model.features(data)
-                output = self.model.classifier(x)
+            output = self.model(data)
 
             test_loss += self.criterion(output, target).item()
             # get the index of the max log-probability
@@ -324,6 +318,7 @@ class PruningFineTuner:
                 self.train_loss_batch += loss.item()
 
             else:  # gradient_based
+                raise NotImplementedError
                 output = self.pruner.forward(batch)
                 loss = self.criterion(output, label)
                 loss.backward()
@@ -332,9 +327,7 @@ class PruningFineTuner:
                     100. * batch_idx / len(self.train_loader), loss.item()))
                 self.train_loss_batch += loss.item()
         else:
-            x = self.model.features(batch)
-            output = self.model.classifier(x)
-            loss = self.criterion(output, label)
+            loss = self.criterion(self.model(batch), label)
             loss.backward()
             optimizer.step()
             print('Train Epoch: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
@@ -345,14 +338,12 @@ class PruningFineTuner:
     def total_num_filters(self):
         # Conv layer의 모든 filter 수를 counting
         filters = 0
-        for module in self.model.features: #debug: don't count filters from encode and decode
+        for module in self.model.before: #debug: don't count filters from encode and decode
             if isinstance(module, torch.nn.modules.conv.Conv2d):
-                if hasattr(self.model, 'encode') and module is self.model.encode:
-                    continue
-                if hasattr(self.model, 'decode') and module is self.model.decode:
-                    continue
                 filters += module.out_channels
-
+        for module in self.model.after: 
+            if isinstance(module, torch.nn.modules.conv.Conv2d):
+                filters += module.out_channels
         return filters
 
     def train(self, optimizer=None, epoches=10):
@@ -374,23 +365,19 @@ class PruningFineTuner:
         # training 하면서 동시에 hook 써서 후보 찾기 #
         # (각 layer 마다 compute_rank 안에서 계산되어서 self.filter_ranks list에 저장이 된다.
 
-        self.pruner.normalize_ranks_per_layer()  # Normalization
+        self.pruner.normalize_ranks_per_layer()  # Normalization 
 
-        return self.pruner.get_pruning_plan(num_filters_to_prune)
+        return self.pruner.get_pruning_plan(num_filters_to_prune) 
 
     def forward_hook(self):
         # Handle either before/after or features depending on model state
-        if hasattr(self.model, "before") and hasattr(self.model, "after"):
-            for module in self.model.before:
-                module.register_forward_hook(fhook)
-            if hasattr(self.model, "encode"):
-                self.model.encode.register_forward_hook(fhook)
-            if hasattr(self.model, "decode"):
-                self.model.decode.register_forward_hook(fhook)
-            for module in self.model.after:
-                module.register_forward_hook(fhook)
-        elif hasattr(self.model, "features"):
-            for module in self.model.features:
+        for module in self.model.before:
+            module.register_forward_hook(fhook)
+        if self.model.augmented:
+            self.model.encode.register_forward_hook(fhook)
+            self.model.decode.register_forward_hook(fhook)
+            
+        for module in self.model.after:
                 module.register_forward_hook(fhook)
 
         for module in self.model.classifier:
@@ -418,10 +405,11 @@ class PruningFineTuner:
         # Make sure all the layers are trainable except for augmented layers
         for param in self.model.before.parameters():
             param.requires_grad = True
-        for param in self.model.encode.parameters():
-            param.requires_grad = False
-        for param in self.model.decode.parameters():
-            param.requires_grad = False
+        if self.model.augmented:
+            for param in self.model.encode.parameters():
+                param.requires_grad = False
+            for param in self.model.decode.parameters():
+                param.requires_grad = False
         for param in self.model.after.parameters():
             param.requires_grad = True
         for param in self.model.classifier.parameters():
@@ -432,7 +420,7 @@ class PruningFineTuner:
         iterations = int(float(number_of_filters) / num_filters_to_prune_per_iteration)
         iterations = int(iterations * self.args.total_pr) #up to 80%
 
-        # # print("Number of pruning iterations to reduce 67% filters", iterations)
+        print(f"Number of pruning iterations to reduce {self.args.total_pr}% filters: ", iterations)
 
         #R_tot, data_tot, time_tot = self.lrp()  # lrp using conventional model # debug: removed these two lines
         #self.R_tot.append(R_tot)
@@ -440,7 +428,7 @@ class PruningFineTuner:
         for kk in range(iterations):
             print("Ranking filters.. {}".format(kk))
             self.niter += 1
-            prune_targets = self.get_candidates_to_prune(num_filters_to_prune_per_iteration)
+            prune_targets = self.get_candidates_to_prune(num_filters_to_prune_per_iteration) 
             # prune_targets: 잘라야 할 filter들의 1) layer number, 2) filter number가 넘어옴
             layers_prunned = {}
             for layer_index, filter_index in prune_targets:
@@ -462,23 +450,27 @@ class PruningFineTuner:
             print("Filters pruned", str(message))
             self.test()  # 잘리고 나서 test 해봄
             print("Fine tuning to recover from pruning iteration.")
-            optimizer = optim.SGD(self.model.parameters(), lr=self.args.lr, momentum=self.args.momentum)
+            optimizer = optim.SGD(self.model.parameters(), lr=self.args.lr, momentum=self.args.momentum) 
             self.train(optimizer, epoches=10)
             #R_tot, data_tot, time_tot = self.lrp() # debug: removed these 3 lines
             #self.R_tot.append(R_tot)
             #del R_tot
 
-        print("Finished. Going to fine tune the model a bit more")
+        print("Finished. Removing augmented layers and fine tuning")
+        #removing augmented layers in forward pass
+        self.model.augmented = False
         self.niter += 1
 
         ## remove encode and decode before final fine tuning
-        self.model.features = nn.Sequential(*list(self.model.before)+list(self.model.after))
         del self.model.encode
         del self.model.decode
-        del self.model.before
-        del self.model.after
+
         # final fine tuning on all layers
-        for param in self.model.features.parameters():
+        for param in self.model.before.parameters():
+            param.requires_grad = True
+        for param in self.model.after.parameters():
+            param.requires_grad = True
+        for param in self.model.classifier.parameters():
             param.requires_grad = True
         self.train(optimizer, epoches=15)
 
