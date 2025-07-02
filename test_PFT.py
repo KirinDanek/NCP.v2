@@ -82,7 +82,7 @@ def test_pruning_pipeline():
 
     print("Pruning...")
     tuner.prune()
-
+    '''
     ### Save model weights and mid-pruning metrics
     #note: if augmented, augmented layers are removed prior to final fine tuning
     # Collect pruned structure info
@@ -97,7 +97,7 @@ def test_pruning_pipeline():
         'test_acc': tuner.test_acc_tot,
         'test_iter': tuner.test_iter,
     }, "pruned_checkpoint.pth")
-
+    '''
 
 if __name__ == "__main__":
     test_pruning_pipeline()
