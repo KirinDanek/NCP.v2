@@ -371,11 +371,23 @@ class PruningFineTuner:
         return self.pruner.get_pruning_plan(num_filters_to_prune)
 
     def forward_hook(self):
-        # For Forward Hook
-        for name, module in self.model.features._modules.items():
+        # Handle either before/after or features depending on model state
+        if hasattr(self.model, "before") and hasattr(self.model, "after"):
+            for module in self.model.before:
+                module.register_forward_hook(fhook)
+            if hasattr(self.model, "encode"):
+                self.model.encode.register_forward_hook(fhook)
+            if hasattr(self.model, "decode"):
+                self.model.decode.register_forward_hook(fhook)
+            for module in self.model.after:
+                module.register_forward_hook(fhook)
+        elif hasattr(self.model, "features"):
+            for module in self.model.features:
+                module.register_forward_hook(fhook)
+
+        for module in self.model.classifier:
             module.register_forward_hook(fhook)
-        for name, module in self.model.classifier._modules.items():
-            module.register_forward_hook(fhook)
+
 
     def prune(self):
         self.train_loss_tot = []
