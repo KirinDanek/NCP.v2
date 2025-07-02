@@ -36,14 +36,22 @@ class FilterPruner:
         self.forward_hook()
 
     def forward_hook(self):
-        for name, module in self.model.features._modules.items():
+        if hasattr(self.model, "before") and hasattr(self.model, "after"):
+            for module in self.model.before:
+                module.register_forward_hook(fhook)
+            if hasattr(self.model, "encode"):
+                self.model.encode.register_forward_hook(fhook)
+            if hasattr(self.model, "decode"):
+                self.model.decode.register_forward_hook(fhook)
+            for module in self.model.after:
+                module.register_forward_hook(fhook)
+        elif hasattr(self.model, "features"):
+            for module in self.model.features:
+                module.register_forward_hook(fhook)
+
+        for module in self.model.classifier:
             module.register_forward_hook(fhook)
-        if hasattr(self.model, "encode"):
-            self.model.encode.register_forward_hook(fhook)
-        if hasattr(self.model, "decode"):
-            self.model.decode.register_forward_hook(fhook)
-        for name, module in self.model.classifier._modules.items():
-            module.register_forward_hook(fhook)
+
 
     ### do forward pass and prepare for LRP. will build separate forward
     # funcs for gradient, etc
