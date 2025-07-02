@@ -34,6 +34,20 @@ def prune_conv_layer(model, layer_index, filter_index, criterion = 'lrp', cuda_f
 
     return model
 
+def get_conv_seq_and_name(model):
+    if hasattr(model, "features"): ### vanilla call
+        return model.features, "features"
+    elif hasattr(model, "before"): ### augmented call
+        seq = []
+        seq.extend(model.before)
+        if hasattr(model, "encode"):
+            seq.append(model.encode)
+        if hasattr(model, "decode"):
+            seq.append(model.decode)
+        seq.extend(model.after)
+        return torch.nn.Sequential(*seq), "augmented"
+    else:
+        raise ValueError("Unrecognized model structure")
 
 def replace_layers(model, i, indexes, layers):
     if i in indexes:
@@ -48,7 +62,8 @@ def prune_conv_layer_sequential(model, layer_index, filter_index, cuda_flag=Fals
     3. filter_index: 자르고자 하는 layer의 filter index
     '''
     # _, conv = model.features._modules.items()[layer_index]
-    _, conv = list(model.features._modules.items())[layer_index]  # 해당 layer를 우선 끄집어 온다.
+    conv_seq, _ = get_conv_seq_and_name(model)
+    _, conv = list(conv_seq._modules.items())[layer_index]  # 해당 layer를 우선 끄집어 온다.
     next_conv = None
     offset = 1
 
