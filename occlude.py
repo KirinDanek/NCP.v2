@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from AugmentedVGG16 import AugmentedVGG16
 from torchvision import transforms
 from PIL import Image
 
@@ -10,27 +9,84 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 import os
 
+from collections import OrderedDict
+
 PRUNED_CHECKPOINT_PATH = "/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/aug-basketball-80.pth"
 IMAGE_PATH = "/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa_basketball_test_images/img-3.jpg"
 OUT_PATH = "./ball_pruned_heatmap.png"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+class PrunedVGG(nn.Module):
+    def __init__(self, state_dict):
+        super().__init__()
+
+        self.features = self._build_feature_layers(state_dict)
+        self.classifier = self._build_classifier_layers(state_dict)
+
+    def _build_feature_layers(self, state_dict):
+        layers = []
+        i = 0
+        while f'features.{i}.weight' in state_dict:
+            weight = state_dict[f'features.{i}.weight']
+            bias = state_dict[f'features.{i}.bias']
+            if len(weight.shape) == 4:  # Conv2d
+                conv = nn.Conv2d(
+                    in_channels=weight.shape[1],
+                    out_channels=weight.shape[0],
+                    kernel_size=weight.shape[2],
+                    padding=1  # assuming same padding
+                )
+                conv.weight = nn.Parameter(weight)
+                conv.bias = nn.Parameter(bias)
+                layers.append(conv)
+            elif 'ReLU' in f'features.{i}':
+                layers.append(nn.ReLU(inplace=True))
+            elif 'MaxPool' in f'features.{i}':
+                layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
+            i += 1
+        return nn.Sequential(*layers)
+
+    def _build_classifier_layers(self, state_dict):
+        layers = []
+        i = 0
+        while f'classifier.{i}.weight' in state_dict:
+            weight = state_dict[f'classifier.{i}.weight']
+            bias = state_dict[f'classifier.{i}.bias']
+            if len(weight.shape) == 2:  # Linear
+                fc = nn.Linear(
+                    in_features=weight.shape[1],
+                    out_features=weight.shape[0]
+                )
+                fc.weight = nn.Parameter(weight)
+                fc.bias = nn.Parameter(bias)
+                layers.append(fc)
+            elif 'ReLU' in f'classifier.{i}':
+                layers.append(nn.ReLU(inplace=True))
+            elif 'Dropout' in f'classifier.{i}':
+                layers.append(nn.Dropout(p=0.5))
+            i += 1
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x
+
+
 # Load checkpoint
 checkpoint = torch.load(PRUNED_CHECKPOINT_PATH, map_location=device)
 state_dict = checkpoint['state_dict']
 
-# Rebuild model architecture
-model = AugmentedVGG16(U=torch.eye(512), UT=torch.eye(512))  # Make sure this matches the saved model
-model.augmented = False  # Augmented layers were removed
-
-# If you modified classifier for binary classification (e.g. 2 classes)
-model.classifier[6] = nn.Linear(4096, 2)
-
-# Load weights
+model = PrunedVGG(state_dict)
 model.load_state_dict(state_dict)
 model = model.to(device)
 model.eval()
+
+print("model initialized successfully")
+
+print("loading weights")
 
 # Load and preprocess input
 image = Image.open(IMAGE_PATH).convert("RGB")  # Replace with your image
@@ -72,7 +128,7 @@ def occlusion_heatmap(model, input_tensor, label_idx, occlusion_size=16, occlusi
 with torch.no_grad():
     output = model(input_tensor)
     pred_label = output.argmax(dim=1).item()
-
+    print(f"Predicted label: {pred_label}, Raw output: {output.cpu().numpy()}")
 heatmap = occlusion_heatmap(model, input_tensor, pred_label)
 
 # Seismic-style visualization
