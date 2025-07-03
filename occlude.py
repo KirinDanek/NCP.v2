@@ -21,55 +21,103 @@ class PrunedVGG(nn.Module):
     def __init__(self, state_dict):
         super().__init__()
 
-        self.features = self._build_feature_layers(state_dict)
-        self.classifier = self._build_classifier_layers(state_dict)
+        self.before = nn.Sequential(OrderedDict([
+            # Block 1
+            ("conv1_1", nn.Conv2d(3, 64, kernel_size=3, padding=1)),
+            ("relu1_1", nn.ReLU(inplace=True)),
+            ("conv1_2", nn.Conv2d(64, 64, kernel_size=3, padding=1)),
+            ("relu1_2", nn.ReLU(inplace=True)),
+            ("pool1", nn.MaxPool2d(kernel_size=2, stride=2)),
 
-    def _build_feature_layers(self, state_dict):
-        layers = []
-        i = 0
-        while f'features.{i}.weight' in state_dict:
-            weight = state_dict[f'features.{i}.weight']
-            bias = state_dict[f'features.{i}.bias']
-            if len(weight.shape) == 4:  # Conv2d
-                conv = nn.Conv2d(
-                    in_channels=weight.shape[1],
-                    out_channels=weight.shape[0],
-                    kernel_size=weight.shape[2],
-                    padding=1  # assuming same padding
-                )
-                conv.weight = nn.Parameter(weight)
-                conv.bias = nn.Parameter(bias)
-                layers.append(conv)
-            elif 'ReLU' in f'features.{i}':
-                layers.append(nn.ReLU(inplace=True))
-            elif 'MaxPool' in f'features.{i}':
-                layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
-            i += 1
-        return nn.Sequential(*layers)
+            # Block 2
+            ("conv2_1", nn.Conv2d(64, 128, kernel_size=3, padding=1)),
+            ("relu2_1", nn.ReLU(inplace=True)),
+            ("conv2_2", nn.Conv2d(128, 128, kernel_size=3, padding=1)),
+            ("relu2_2", nn.ReLU(inplace=True)),
+            ("pool2", nn.MaxPool2d(kernel_size=2, stride=2)),
 
-    def _build_classifier_layers(self, state_dict):
-        layers = []
-        i = 0
-        while f'classifier.{i}.weight' in state_dict:
-            weight = state_dict[f'classifier.{i}.weight']
-            bias = state_dict[f'classifier.{i}.bias']
-            if len(weight.shape) == 2:  # Linear
-                fc = nn.Linear(
-                    in_features=weight.shape[1],
-                    out_features=weight.shape[0]
-                )
-                fc.weight = nn.Parameter(weight)
-                fc.bias = nn.Parameter(bias)
-                layers.append(fc)
-            elif 'ReLU' in f'classifier.{i}':
-                layers.append(nn.ReLU(inplace=True))
-            elif 'Dropout' in f'classifier.{i}':
-                layers.append(nn.Dropout(p=0.5))
-            i += 1
-        return nn.Sequential(*layers)
+            # Block 3
+            ("conv3_1", nn.Conv2d(128, 256, kernel_size=3, padding=1)),
+            ("relu3_1", nn.ReLU(inplace=True)),
+            ("conv3_2", nn.Conv2d(256, 256, kernel_size=3, padding=1)),
+            ("relu3_2", nn.ReLU(inplace=True)),
+            ("conv3_3", nn.Conv2d(256, 256, kernel_size=3, padding=1)),
+            ("relu3_3", nn.ReLU(inplace=True)),
+            ("pool3", nn.MaxPool2d(kernel_size=2, stride=2)),
+
+            # Block 4
+            ("conv4_1", nn.Conv2d(256, 512, kernel_size=3, padding=1)),
+            ("relu4_1", nn.ReLU(inplace=True)),
+            ("conv4_2", nn.Conv2d(512, 512, kernel_size=3, padding=1)),
+            ("relu4_2", nn.ReLU(inplace=True)),
+            ("conv4_3", nn.Conv2d(512, 512, kernel_size=3, padding=1)),
+            ("relu4_3", nn.ReLU(inplace=True)),
+            ("pool4", nn.MaxPool2d(kernel_size=2, stride=2)),
+        ]))
+
+        self.after = nn.Sequential(OrderedDict([
+            # Block 5
+            ("conv5_1", nn.Conv2d(512, 512, kernel_size=3, padding=1)),
+            ("relu5_1", nn.ReLU(inplace=True)),
+            ("conv5_2", nn.Conv2d(512, 512, kernel_size=3, padding=1)),
+            ("relu5_2", nn.ReLU(inplace=True)),
+            ("conv5_3", nn.Conv2d(512, 512, kernel_size=3, padding=1)),
+            ("relu5_3", nn.ReLU(inplace=True)),
+            ("pool5", nn.MaxPool2d(kernel_size=2, stride=2)),
+        ]))
+
+        self.classifier = nn.Sequential(OrderedDict([
+            ("fc1", nn.Linear(25088, 4096)),
+            ("relu_fc1", nn.ReLU(inplace=True)),
+            ("drop_fc1", nn.Dropout()),
+            ("fc2", nn.Linear(4096, 4096)),
+            ("relu_fc2", nn.ReLU(inplace=True)),
+            ("drop_fc2", nn.Dropout()),
+            ("fc3", nn.Linear(4096, 1000)),
+        ]))
+
+        self._load_weights(state_dict)
+
+    def _load_weights(self, state_dict):
+        # Load state dicts individually
+        self._load_submodule(self.before, state_dict, 'before')
+        self._load_submodule(self.after, state_dict, 'after')
+        self._load_submodule(self.classifier, state_dict, 'classifier')
+
+    def _load_submodule(self, module, state_dict, prefix):
+        for name, layer in module.named_children():
+            if isinstance(layer, (nn.Conv2d, nn.Linear)):
+                w_key = f"{prefix}.{self._get_index(prefix, name)}.weight"
+                b_key = f"{prefix}.{self._get_index(prefix, name)}.bias"
+                if w_key in state_dict:
+                    layer.weight.data.copy_(state_dict[w_key])
+                    layer.bias.data.copy_(state_dict[b_key])
+
+    def _get_index(self, prefix, layer_name):
+        # Mapping from layer name to flat index
+        idx_map = {
+            'before': {
+                'conv1_1': 37, 'relu1_1': 36, 'conv1_2': 35, 'relu1_2': 34, 'pool1': 33,
+                'conv2_1': 32, 'relu2_1': 31, 'conv2_2': 30, 'relu2_2': 29, 'pool2': 28,
+                'conv3_1': 27, 'relu3_1': 26, 'conv3_2': 25, 'relu3_2': 24,
+                'conv3_3': 23, 'relu3_3': 22, 'pool3': 21,
+                'conv4_1': 20, 'relu4_1': 19, 'conv4_2': 18, 'relu4_2': 17,
+                'conv4_3': 16, 'relu4_3': 15, 'pool4': 14,
+            },
+            'after': {
+                'conv5_1': 13, 'relu5_1': 12, 'conv5_2': 11, 'relu5_2': 10,
+                'conv5_3': 9,  'relu5_3': 8,  'pool5': 7,
+            },
+            'classifier': {
+                'fc3': 0, 'drop_fc2': 1, 'relu_fc2': 2, 'fc2': 3,
+                'drop_fc1': 4, 'relu_fc1': 5, 'fc1': 6,
+            },
+        }
+        return idx_map[prefix][layer_name]
 
     def forward(self, x):
-        x = self.features(x)
+        x = self.before(x)
+        x = self.after(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x
@@ -79,9 +127,7 @@ class PrunedVGG(nn.Module):
 checkpoint = torch.load(PRUNED_CHECKPOINT_PATH, map_location=device)
 state_dict = checkpoint['state_dict']
 
-model = PrunedVGG(state_dict)
-model.load_state_dict(state_dict)
-model = model.to(device)
+model = PrunedVGG(state_dict).to(device)
 model.eval()
 
 print("model initialized successfully")
