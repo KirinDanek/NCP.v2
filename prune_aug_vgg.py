@@ -79,7 +79,7 @@ class FilterPruner:
         return self.model.classifier(x)
     
     #### DEBUG: ONLY BUILT TO RUN ON GAMMA HEURISTIC OR POSITIVE RELEVANCE BACKPROP
-    def backward_lrp(self, R, relevance_method='z', param=1):
+    def backward_lrp(self, R, relevance_method='alpha', param=1):
         modules = list(self.model.before)
         if self.model.augmented:
             modules += [self.model.encode, self.model.decode]
@@ -136,7 +136,7 @@ class FilterPruner:
                     dynamic_param = get_augmented_vgg16_lrp_param(i)
                     R = lrp(module, R.data, lrp_var=relevance_method, param=dynamic_param)
 
-        elif relevance_method == 'z' and param == 1: ### POSITIVE RELEVANCE ONLY
+        elif relevance_method == 'alpha' and param == 1: ### POSITIVE RELEVANCE ONLY
             for i, module in enumerate(modules):
                 if isinstance(module, torch.nn.modules.conv.Conv2d):
                     if not (self.model.augmented and (module is self.model.encode or module is self.model.decode)):### debug: include this for gamma case
