@@ -25,7 +25,7 @@ def get_test_args():
     parser.add_argument('--relevance', action='store_true', default=True)
     parser.add_argument('--method_type', type=str, default='lrp')
     parser.add_argument('--pr_step', type=float, default=0.05)      # prune % per iteration
-    parser.add_argument('--total_pr', type=float, default=0.8)     # prune % total
+    parser.add_argument('--total_pr', type=float, default=0.80)     # prune % total
 
     args = parser.parse_args([])
     return args
@@ -62,7 +62,7 @@ def test_pruning_pipeline():
 
     criterion = torch.nn.CrossEntropyLoss()
     model.train()
-    for epoch in range(15):  
+    for epoch in range(15): #15  
         running_loss = 0.0
         for batch_idx, (data, target) in enumerate(tuner.train_loader):
             if args.cuda:
@@ -82,11 +82,21 @@ def test_pruning_pipeline():
 
     print("Pruning...")
     tuner.prune()
-    '''
+    
     ### Save model weights and mid-pruning metrics
     #note: if augmented, augmented layers are removed prior to final fine tuning
-    # Collect pruned structure info
-    pruned_structure = [m.out_channels for m in tuner.model.features if isinstance(m, torch.nn.Conv2d)]
+
+    if USE_AUGMENTED_MODEL:
+        pruned_structure = []
+        for module in tuner.model.before:
+            if isinstance(module, torch.nn.Conv2d):
+                pruned_structure.append(module.out_channels)
+        for module in tuner.model.after:
+            if isinstance(module, torch.nn.Conv2d):
+                pruned_structure.append(module.out_channels)
+    else:    
+        # Collect pruned structure info
+        pruned_structure = [m.out_channels for m in tuner.model.features if isinstance(m, torch.nn.Conv2d)]
 
     # Save model + pruner metadata
     torch.save({
@@ -97,7 +107,7 @@ def test_pruning_pipeline():
         'test_acc': tuner.test_acc_tot,
         'test_iter': tuner.test_iter,
     }, "pruned_checkpoint.pth")
-    '''
+    
 
 if __name__ == "__main__":
     test_pruning_pipeline()
