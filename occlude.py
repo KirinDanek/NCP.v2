@@ -22,21 +22,18 @@ class PrunedVGG(nn.Module):
         super().__init__()
 
         self.before = nn.Sequential(OrderedDict([
-            # Block 1
             ("conv1_1", nn.Conv2d(3, 64, kernel_size=3, padding=1)),
             ("relu1_1", nn.ReLU(inplace=True)),
             ("conv1_2", nn.Conv2d(64, 64, kernel_size=3, padding=1)),
             ("relu1_2", nn.ReLU(inplace=True)),
             ("pool1", nn.MaxPool2d(kernel_size=2, stride=2)),
 
-            # Block 2
             ("conv2_1", nn.Conv2d(64, 128, kernel_size=3, padding=1)),
             ("relu2_1", nn.ReLU(inplace=True)),
             ("conv2_2", nn.Conv2d(128, 128, kernel_size=3, padding=1)),
             ("relu2_2", nn.ReLU(inplace=True)),
             ("pool2", nn.MaxPool2d(kernel_size=2, stride=2)),
 
-            # Block 3
             ("conv3_1", nn.Conv2d(128, 256, kernel_size=3, padding=1)),
             ("relu3_1", nn.ReLU(inplace=True)),
             ("conv3_2", nn.Conv2d(256, 256, kernel_size=3, padding=1)),
@@ -45,7 +42,6 @@ class PrunedVGG(nn.Module):
             ("relu3_3", nn.ReLU(inplace=True)),
             ("pool3", nn.MaxPool2d(kernel_size=2, stride=2)),
 
-            # Block 4
             ("conv4_1", nn.Conv2d(256, 512, kernel_size=3, padding=1)),
             ("relu4_1", nn.ReLU(inplace=True)),
             ("conv4_2", nn.Conv2d(512, 512, kernel_size=3, padding=1)),
@@ -56,7 +52,6 @@ class PrunedVGG(nn.Module):
         ]))
 
         self.after = nn.Sequential(OrderedDict([
-            # Block 5
             ("conv5_1", nn.Conv2d(512, 512, kernel_size=3, padding=1)),
             ("relu5_1", nn.ReLU(inplace=True)),
             ("conv5_2", nn.Conv2d(512, 512, kernel_size=3, padding=1)),
@@ -66,8 +61,14 @@ class PrunedVGG(nn.Module):
             ("pool5", nn.MaxPool2d(kernel_size=2, stride=2)),
         ]))
 
+        # Dynamically compute flattened feature size
+        dummy_input = torch.zeros(1, 3, 224, 224)
+        with torch.no_grad():
+            dummy_features = self.after(self.before(dummy_input))
+            flattened_dim = dummy_features.view(1, -1).shape[1]
+
         self.classifier = nn.Sequential(OrderedDict([
-            ("fc1", nn.Linear(25088, 4096)),
+            ("fc1", nn.Linear(flattened_dim, 4096)),
             ("relu_fc1", nn.ReLU(inplace=True)),
             ("drop_fc1", nn.Dropout()),
             ("fc2", nn.Linear(4096, 4096)),
@@ -79,7 +80,6 @@ class PrunedVGG(nn.Module):
         self._load_weights(state_dict)
 
     def _load_weights(self, state_dict):
-        # Load state dicts individually
         self._load_submodule(self.before, state_dict, 'before')
         self._load_submodule(self.after, state_dict, 'after')
         self._load_submodule(self.classifier, state_dict, 'classifier')
@@ -94,7 +94,6 @@ class PrunedVGG(nn.Module):
                     layer.bias.data.copy_(state_dict[b_key])
 
     def _get_index(self, prefix, layer_name):
-        # Mapping from layer name to flat index
         idx_map = {
             'before': {
                 'conv1_1': 37, 'relu1_1': 36, 'conv1_2': 35, 'relu1_2': 34, 'pool1': 33,
