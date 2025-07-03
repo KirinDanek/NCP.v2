@@ -21,7 +21,7 @@ checkpoint = torch.load(PRUNED_CHECKPOINT_PATH, map_location=device)
 state_dict = checkpoint['state_dict']
 
 # Rebuild model architecture
-model = AugmentedVGG16(U_ab=None, U_ab_T=None)  # Make sure this matches the saved model
+model = AugmentedVGG16(U=torch.eye(512), UT=torch.eye(512))  # Make sure this matches the saved model
 model.augmented = False  # Augmented layers were removed
 
 # If you modified classifier for binary classification (e.g. 2 classes)
