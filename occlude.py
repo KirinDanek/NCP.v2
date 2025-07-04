@@ -10,11 +10,13 @@ from matplotlib.colors import ListedColormap
 import os
 
 from collections import OrderedDict
+from captum.attr import Occlusion
 
 PRUNED_CHECKPOINT_PATH = "/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/van-basketball-80.pth"
 #PRUNED_CHECKPOINT_PATH = './test_checkpoint.pth'
 IMAGE_PATH = "/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa_basketball_test_images/img-3.jpg"
 OUT_PATH = "./ball_pruned_heatmap_vanilla.png"
+TARGET_CLASS = 0 # basketball
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print('device: ', device)
@@ -37,7 +39,7 @@ preprocess = transforms.Compose([
 ])
 input_tensor = preprocess(image).unsqueeze(0).to(device)  # Shape: [1, 3, 224, 224]
 
-
+'''
 def occlusion_heatmap(model, input_tensor, label_idx, occlusion_size=16, occlusion_stride=1):
     model.eval()
     input_tensor = input_tensor.clone()
@@ -61,14 +63,24 @@ def occlusion_heatmap(model, input_tensor, label_idx, occlusion_size=16, occlusi
             heatmap[y:y+occlusion_size, x:x+occlusion_size] += relevance
 
     return heatmap
-
+'''
 # Run for predicted class
 with torch.no_grad():
     output = model(input_tensor)
     pred_label = output.argmax(dim=1).item()
     print(f"Predicted label: {pred_label}, Raw output: {output.cpu().numpy()}")
-heatmap = occlusion_heatmap(model, input_tensor, pred_label)
-
+imagenet_mean = torch.tensor([0.485, 0.456, 0.406],
+                        device=device).view(1, 3, 1, 1)
+occlusion = Occlusion(model)
+attributions = occlusion.attribute(
+    input_tensor,
+    strides=(1, 8, 8),
+    sliding_window_shapes=(1, 15, 15),
+    target=TARGET_CLASS,
+    baselines=imagenet_mean
+)
+attr = attributions.squeeze(0).cpu().detach().numpy()  # (3,224,224)
+heatmap = attr.sum(axis=0)  # debug can change to np.abs inb                        # (224,224)
 # Seismic-style visualization
 heatmap_seismic = 10 * ((np.abs(heatmap)**3.0).mean() ** (1.0/3))
 my_cmap = plt.cm.seismic(np.arange(plt.cm.seismic.N))
