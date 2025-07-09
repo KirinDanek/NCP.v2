@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 ### vars
 MODEL_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/aug-basketball-80.pth'
 IMAGE_DIR_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa_basketball_test_images/'
-OUTPUT_HEATMAP_PATH = '/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/80-basketball-ablated/ncp.png'
+OUTPUT_HEATMAP_PATH = '/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/80-basketball-ablated/lrp-/ncp.png'
 
 # "basketball" in IN bball binary dataset
 TARGET_CLASS = 0
@@ -156,6 +156,12 @@ if __name__ == "__main__":
             # Save heatmap for this rule and image
             filename = os.path.basename(image_path)
             match = pattern.match(filename)
+            if match is None:
+                print(f"couldn't extract image idx from {filename}")
+                continue
             img_idx = match.group(1) # image index (eg, img-1.jpg)
-            rule_output_path = OUTPUT_HEATMAP_PATH.replace('.png', f'_{rule_name}_img-{img_idx}.png')
+            param_str = str(param).replace('.', 'p') if isinstance(param, float) else str(param)
+            rule_output_path = OUTPUT_HEATMAP_PATH.replace('lrp-', f'lrp-{rule_name}-{param_str}')
+            rule_output_path = rule_output_path.replace('.png', f'_img-{img_idx}.png')
+            os.makedirs(os.path.dirname(rule_output_path), exist_ok=True)
             visualize_and_save_lrp(R_test, out_path=rule_output_path)
