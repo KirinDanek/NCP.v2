@@ -89,7 +89,7 @@ for image_path in image_paths:
     # === Plot overlay ===
     fig, ax = plt.subplots()
     ax.imshow(input_denorm, interpolation='bilinear')
-    ax.imshow(heatmap, cmap=my_cmap, alpha=0.5, vmin=-heatmap_seismic, vmax=heatmap_seismic, interpolation='bilinear')
+    ax.imshow(heatmap, cmap=my_cmap, alpha=0.9, vmin=-heatmap_seismic, vmax=heatmap_seismic, interpolation='bilinear')
     ax.axis('off')
 
     # Annotate predicted label and raw logits
@@ -108,6 +108,8 @@ for image_path in image_paths:
     os.makedirs(os.path.dirname(rule_output_path), exist_ok=True)
 
     plt.savefig(rule_output_path, bbox_inches='tight', pad_inches=0)
+    # Save raw heatmap as .npy file
+    np.save(rule_output_path.replace('.png', '.npy'), heatmap)
     plt.close()
 
 
