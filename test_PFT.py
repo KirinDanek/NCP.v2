@@ -4,12 +4,13 @@ from torchvision import models
 import torch.nn as nn
 from AugmentedVGG16 import *
 
-USE_AUGMENTED_MODEL=True
+USE_AUGMENTED_MODEL=False
 SUBSPACE_DIMS = [128, 128, 128, 128]
 IRRELEVANT_SUBSPACES = [3]  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
 U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_tensor.pt'
-
-
+# if using already-pruned model
+MODEL_VER = 'van'
+MODEL_FILEPATH = f'/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/{MODEL_VER}-basketball-80.pth'
 
 def get_test_args():
     parser = argparse.ArgumentParser()
@@ -24,15 +25,15 @@ def get_test_args():
     # pruning config
     parser.add_argument('--relevance', action='store_true', default=True)
     parser.add_argument('--method_type', type=str, default='lrp')
-    parser.add_argument('--pr_step', type=float, default=0.05)      # prune % per iteration
-    parser.add_argument('--total_pr', type=float, default=0.80)     # prune % total
+    parser.add_argument('--pr_step', type=float, default=0.25)      # prune % per iteration
+    parser.add_argument('--total_pr', type=float, default=0.50)     # prune % total
 
     args = parser.parse_args([])
     return args
 
 def test_pruning_pipeline():
     args = get_test_args()
-
+    '''
     if USE_AUGMENTED_MODEL:
         U = torch.load(U_FILEPATH)  # shape: (512, 512)
         U_ab, U_ab_T = ablate_subspace_matrix(U, SUBSPACE_DIMS, IRRELEVANT_SUBSPACES)
@@ -41,7 +42,13 @@ def test_pruning_pipeline():
         model = models.vgg16(pretrained=True)
         
     model.classifier[6] = nn.Linear(4096, 2) # for binary classification
+    '''
+    ### load already pruned model to continue pruning
+    checkpoint = torch.load(MODEL_FILEPATH)
+    model = checkpoint['model']
+
     if args.cuda:
+        print('cuda')
         model = model.cuda()
 
     print("Initializing PruningFineTuner...")
@@ -51,7 +58,7 @@ def test_pruning_pipeline():
         from prune_van_vgg import PruningFineTuner
         
     tuner = PruningFineTuner(args, model)
-
+    '''
     print("Training new 2-d output layer...")
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     # only train output layer
@@ -78,7 +85,7 @@ def test_pruning_pipeline():
             if batch_idx % 10 == 0:
                 print(f"Epoch {epoch+1} | Batch {batch_idx} | Loss: {loss.item():.4f}")
         print(f"Epoch {epoch+1} complete. Avg Loss: {running_loss / len(tuner.train_loader):.4f}")
-
+    '''
 
     print("Pruning...")
     tuner.prune()
@@ -100,13 +107,14 @@ def test_pruning_pipeline():
 
     # Save model + pruner metadata
     torch.save({
+        'model': tuner.model,
         'state_dict': tuner.model.state_dict(),
         'pruned_structure': pruned_structure,
         'train_loss': tuner.train_loss_tot,
         'test_loss': tuner.test_loss_tot,
         'test_acc': tuner.test_acc_tot,
         'test_iter': tuner.test_iter,
-    }, "pruned_checkpoint.pth")
+    }, "pruned_checkpoint_van_90.pth")
     
 
 if __name__ == "__main__":
