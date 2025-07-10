@@ -13,9 +13,10 @@ import matplotlib.pyplot as plt
 
 
 ### vars
-MODEL_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/aug-basketball-80.pth'
+MODEL_VER = "ncp" ## ncp or van
+MODEL_FILEPATH = f'/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/{MODEL_VER}-basketball-80.pth'
 IMAGE_DIR_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa_basketball_test_images/'
-OUTPUT_HEATMAP_PATH = '/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/80-basketball-ablated/lrp-/ncp.png'
+OUTPUT_HEATMAP_PATH = f'/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/80-basketball-ablated/lrp-/{MODEL_VER}.png'
 
 # "basketball" in IN bball binary dataset
 TARGET_CLASS = 0
@@ -122,7 +123,7 @@ if __name__ == "__main__":
         # Try different LRP rules for comparison
         lrp_rules = [
             ('alphabeta', 1.0),     # alpha=1, beta=0 
-            ('gamma', 'heuristic'),       
+            #('gamma', 'heuristic'),       
         ]
         
         for rule_name, param in lrp_rules:
@@ -164,4 +165,6 @@ if __name__ == "__main__":
             rule_output_path = OUTPUT_HEATMAP_PATH.replace('lrp-', f'lrp-{rule_name}-{param_str}')
             rule_output_path = rule_output_path.replace('.png', f'_img-{img_idx}.png')
             os.makedirs(os.path.dirname(rule_output_path), exist_ok=True)
-            visualize_and_save_lrp(R_test, out_path=rule_output_path)
+
+            np.save(rule_output_path.replace('.png', '.npy'), R_test)
+            #visualize_and_save_lrp(R_test, out_path=rule_output_path)
