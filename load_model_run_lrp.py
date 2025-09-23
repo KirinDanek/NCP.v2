@@ -9,17 +9,22 @@ import re
 from torchvision import transforms
 from PIL import Image 
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 
 
 ### vars
-MODEL_VER = "ncp" ## ncp or van
-MODEL_FILEPATH = f'/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/{MODEL_VER}-basketball-80.pth'
-IMAGE_DIR_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa_basketball_test_images/'
-OUTPUT_HEATMAP_PATH = f'/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/80-basketball-ablated/lrp-/{MODEL_VER}.png'
+SAVE_NPY = False
+SAVE_HEATMAP = True
+MODEL_VER = "van" ## ncp or van
+TARGET_CLASS_NAME = "crate" # basketball, etc
+# "basketball" in IN bball binary dataset is 0 . 'crate' is 1
+TARGET_CLASS = 1
+IMAGE_DIR_FILEPATH = '/n/fs/ncp/NCP.v2/data/images/'
 
-# "basketball" in IN bball binary dataset
-TARGET_CLASS = 0
+
+MODEL_FILEPATH = f'/n/fs/ncp/NCP.v2/results/pruned-models/pruned_checkpoint_{MODEL_VER}_{TARGET_CLASS_NAME}_80.pth'
+OUTPUT_HEATMAP_PATH = f'/n/fs/ncp/NCP.v2/results/pruned-models/80-{TARGET_CLASS_NAME}-{MODEL_VER}-lrp-.png'
 
 
 def load_and_preprocess(image_path: str, device: torch.device):
@@ -102,10 +107,16 @@ if __name__ == "__main__":
     register_hooks(model)
 
     # Flatten model into an ordered list
-    modules = list(model.before) + list(model.after) + list(model.classifier)
+    if MODEL_VER == "van":
+        modules = list(model.features) + list(model.classifier)
+    elif MODEL_VER == "ncp":
+        modules = list(model.before) + list(model.after) + list(model.classifier)
+    else: 
+        raise RuntimeError("unknown model type")
 
-    image_paths = glob.glob(os.path.join(IMAGE_DIR_FILEPATH, 'img-*.jpg'))
 
+    #image_paths = glob.glob(os.path.join(IMAGE_DIR_FILEPATH, 'img-*.jpg'))
+    image_paths = [Path("/n/fs/ncp/NCP.v2/data/images/imagenet_n03127925_binary_prune_set/target_25_watermarked/n03127925_3929.JPEG")]
 
     for image_path in image_paths:
         ### 3. Load and preprocess the input image
@@ -123,7 +134,7 @@ if __name__ == "__main__":
         # Try different LRP rules for comparison
         lrp_rules = [
             ('alphabeta', 1.0),     # alpha=1, beta=0 
-            #('gamma', 'heuristic'),       
+            ('gamma', 'heuristic'),       
         ]
         
         for rule_name, param in lrp_rules:
@@ -155,16 +166,20 @@ if __name__ == "__main__":
             print(f"Final input relevance sum: {R_test.sum().item():.4f}")
 
             # Save heatmap for this rule and image
-            filename = os.path.basename(image_path)
-            match = pattern.match(filename)
-            if match is None:
-                print(f"couldn't extract image idx from {filename}")
-                continue
-            img_idx = match.group(1) # image index (eg, img-1.jpg)
+            #filename = os.path.basename(image_path)
+            #match = pattern.match(filename)
+            #if match is None:
+            #    print(f"couldn't extract image idx from {filename}")
+            #    continue
+            #img_idx = match.group(1) # image index (eg, img-1.jpg)
             param_str = str(param).replace('.', 'p') if isinstance(param, float) else str(param)
             rule_output_path = OUTPUT_HEATMAP_PATH.replace('lrp-', f'lrp-{rule_name}-{param_str}')
-            rule_output_path = rule_output_path.replace('.png', f'_img-{img_idx}.png')
+            #rule_output_path = rule_output_path.replace('.png', f'_img-{img_idx}.png')
             os.makedirs(os.path.dirname(rule_output_path), exist_ok=True)
-
-            np.save(rule_output_path.replace('.png', '.npy'), R_test)
-            #visualize_and_save_lrp(R_test, out_path=rule_output_path)
+            if SAVE_NPY:
+                heatmap = R_test.squeeze(0).detach().cpu().numpy()
+                heatmap = heatmap.sum(axis=0)
+                np.save(rule_output_path.replace('.png', '.npy'), heatmap)
+            if SAVE_HEATMAP:
+                visualize_and_save_lrp(R_test, out_path=rule_output_path)
+                print('saved', rule_output_path)

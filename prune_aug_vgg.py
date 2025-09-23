@@ -20,6 +20,7 @@ from heapq import nsmallest
 import os
 ### the layers we disallow pruning on (ie before[-1], encode, decode)
 DISALLOWED_LAYERS = {23, 24, 21} # debug: double check indices
+STANDARD_LRP_THROUGH_AUG = True
 
 def fhook(self, input, output):
     self.input = input[0]
@@ -152,10 +153,18 @@ class FilterPruner:
                         ## add batch scores to total
                         self.filter_ranks[activation_index] += values
                         self.grad_index += 1
-                if i == len(modules)-1:
-                    R = lrp(module, R.data, lrp_var='first')
+                if STANDARD_LRP_THROUGH_AUG:
+                    if i == len(modules)-1:
+                        R = lrp(module, R.data, lrp_var='first')
+                    elif module is self.model.encode or module is self.model.decode:  
+                        R = lrp(module, R.data, lrp_var='gamma', param=0.0)
+                    else:  
+                        R = lrp(module, R.data, lrp_var=relevance_method, param=param)
                 else: 
-                    R = lrp(module, R.data, lrp_var=relevance_method, param=param)
+                    if i == len(modules)-1:
+                        R = lrp(module, R.data, lrp_var='first')
+                    else:    
+                        R = lrp(module, R.data, lrp_var=relevance_method, param=param)
         else: 
             raise NotImplementedError
 
@@ -231,7 +240,8 @@ class PruningFineTuner:
         get_dataset = {
             #"cifar10": dataset.get_cifar10,  # CIFAR-10
             #'imagenet': dataset.get_imagenet, # ImageNet
-            'basketball_imagenet': dataset.get_basketball_imagenet
+            #'basketball_imagenet': dataset.get_basketball_imagenet,
+            'crate_imagenet': dataset.get_crate_imagenet,
         }[self.args.data_type.lower()]
         train_dataset, test_dataset = get_dataset()
         print(f"train_dataset:{len(train_dataset)}, test_dataset:{len(test_dataset)}")
@@ -385,7 +395,7 @@ class PruningFineTuner:
             module.register_forward_hook(fhook)
 
 
-    def prune(self):
+    def prune(self, fine_tune_conv_layers=True, fine_tune_without_augmented_layers=False):
         self.train_loss_tot = []
         self.test_loss_tot = []
         self.test_acc_tot = []
@@ -446,13 +456,22 @@ class PruningFineTuner:
             self.model = model.cuda() if self.args.cuda else model
 
             message = str(100 * float(self.total_num_filters()) / number_of_filters) + "%"
-            ### note: this is calculating the pct of remaining filters
-            # (not pct of pruned filters)
-            print("Filters pruned", str(message))
+
+            print("Filters remaining", str(message))
             self.test()  # 잘리고 나서 test 해봄
             print("Fine tuning to recover from pruning iteration.")
-            optimizer = optim.SGD(self.model.parameters(), lr=self.args.lr, momentum=self.args.momentum) 
-            self.train(optimizer, epoches=10)
+            if fine_tune_without_augmented_layers: #debug 
+                was_model_augmented = model.augmented
+                model.augmented = False
+            if fine_tune_conv_layers:
+                optimizer = optim.SGD(self.model.parameters(), lr=self.args.lr, momentum=self.args.momentum)
+            else:
+                optimizer = None
+            try:
+                self.train(optimizer, epoches=10)
+            finally: 
+                if fine_tune_without_augmented_layers: # debug
+                    model.augmented = was_model_augmented
             #R_tot, data_tot, time_tot = self.lrp() # debug: removed these 3 lines
             #self.R_tot.append(R_tot)
             #del R_tot

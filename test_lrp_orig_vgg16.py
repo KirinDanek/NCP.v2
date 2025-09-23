@@ -12,11 +12,11 @@ from torchvision.models import vgg16
 
 
 ### vars
-IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/drsa-basketball-img3.jpg'
-OUTPUT_HEATMAP_PATH = 'lrp_heatmap_van.png'
+IMAGE_FILEPATH = '/n/fs/ncp/NCP.v2/data/images/imagenet_n03127925_binary_prune_set/target_25_watermarked/n03127925_3929.JPEG'
+OUTPUT_HEATMAP_PATH = 'crate_watermark_heatmap_van.png'
 
 # "basketball" in ImageNet is class index 430 (zero‐indexed)
-TARGET_CLASS = 430
+TARGET_CLASS = 519
 
 
 def load_and_preprocess(image_path: str, device: torch.device):
@@ -58,23 +58,23 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     print(f"Raw heatmap stats — min: {heatmap.min():.6f}, max: {heatmap.max():.6f}, mean: {heatmap.mean():.6f}")
     
     # Method 1: Positive relevance only (your original approach)
-    heatmap_pos = np.maximum(heatmap, 0)
+    #heatmap_pos = np.maximum(heatmap, 0)
     #p99 = np.percentile(heatmap_pos, 94)
     #heatmap_pos = np.clip(heatmap_pos, 0, p99)
     
-    if True:
-        plt.figure(figsize=(8, 8))
-        plt.imshow(heatmap_pos, cmap='hot')
-        plt.axis('off')
-        plt.tight_layout()
-        plt.savefig(out_path.replace('.png', '_positive_only.png'), bbox_inches='tight', pad_inches=0)
-        plt.close()
-        print(f"Positive-only heatmap saved to '{out_path.replace('.png', '_positive_only.png')}'")
+    #if True:
+    #    plt.figure(figsize=(8, 8))
+    #    plt.imshow(heatmap_pos, cmap='hot')
+    #    plt.axis('off')
+    #    plt.tight_layout()
+    #    plt.savefig(out_path.replace('.png', '_positive_only.png'), bbox_inches='tight', pad_inches=0)
+    #    plt.close()
+    #    print(f"Positive-only heatmap saved to '{out_path.replace('.png', '_positive_only.png')}'")
     
 
     # Method 3: Centered around zero with diverging colormap (outlier-protected)
     # This shows both positive (red) and negative (blue) contributions
-    heatmap_centered = heatmap.copy()
+    #heatmap_centered = heatmap.copy()
     # Protect against outliers using percentile clipping
     #pos_p99 = np.percentile(heatmap_centered[heatmap_centered > 0], 99) if np.any(heatmap_centered > 0) else 0
     #neg_p99 = np.percentile(np.abs(heatmap_centered[heatmap_centered < 0]), 99) if np.any(heatmap_centered < 0) else 0
@@ -83,7 +83,7 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
     #clip_val = max(pos_p99, neg_p99)
     #clip_val = p99
     #clip_val = 0.3
-
+    '''
     if True:
     # Clip outliers symmetrically
         #heatmap_centered_clipped = np.clip(heatmap_centered, -0.02, 0.02)
@@ -93,7 +93,7 @@ def visualize_and_save_lrp(attribution_tensor: torch.Tensor,
         plt.tight_layout()
         plt.savefig(out_path.replace('.png', '_centered.png'), bbox_inches='tight', pad_inches=0)
         plt.close()
-        print(f"Centered heatmap saved to '{out_path.replace('.png', '_centered.png')}'")
+        print(f"Centered heatmap saved to '{out_path.replace('.png', '_centered.png')}'")'''
     heatmap_seismic = 10*((np.abs(heatmap)**3.0).mean()**(1.0/3))
     from matplotlib.colors import ListedColormap
     my_cmap = plt.cm.seismic(np.arange(plt.cm.seismic.N))
@@ -118,9 +118,9 @@ def get_vgg16_lrp_param(module_idx: int) -> float:
     ── Conv2 + Conv1 blocks ─────────  0.50  (all remaining layers)
     """
     if module_idx <= 6:                         # classifier layers
-        return 0.0 # 0.0
+        return 0.00 # 0.0
     elif 7 <= module_idx <= 13:                 # Conv5
-        return 0.0 #0.0
+        return 0.00 #0.0
     elif 14 <= module_idx <= 20:                # 1×1 augmented + Conv4
         return 0.10 # 0.10
     elif 21 <= module_idx <= 27:                # Conv3
@@ -148,7 +148,8 @@ if __name__ == "__main__":
     #input_tensor.requires_grad_(True) ### debug remove
     with torch.no_grad():
         output = model(input_tensor)
-        #predicted_class = output.argmax(dim=1).item()
+        predicted_class = output.argmax(dim=1).item()
+        print(f"predicted class: {predicted_class}, logit: {output[0, predicted_class]}")
         R = torch.zeros_like(output)
         R[0, TARGET_CLASS] = output[0, TARGET_CLASS]
 
@@ -164,8 +165,8 @@ if __name__ == "__main__":
         #('simple', 1e-6),      # epsilon rule - often good baseline
         #('alphabeta', 2),     # alpha=2, beta=-1 (more aggressive)
         ('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
-        ('gamma', 0.0),        # gamma rule
-        ('gamma', 0.25),
+        #('gamma', 0.0),        # gamma rule
+        #('gamma', 0.25),
         ('gamma', 'heuristic')
     ]
 

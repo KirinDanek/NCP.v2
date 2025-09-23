@@ -13,13 +13,13 @@ import matplotlib.pyplot as plt
 
 ### vars
 SUBSPACE_DIMS = [128, 128, 128, 128]
-IRRELEVANT_SUBSPACES = [3]  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
-U_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/projection_matrices/U_basketball_tensor.pt'
-IMAGE_FILEPATH = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/img-3.jpg'
-OUTPUT_HEATMAP_PATH = 'lrp_heatmap.png'
+IRRELEVANT_SUBSPACES = [1]  # test: ablate "ball" subspace (ix 3). Should be easy to see in LRP heatmap
+U_FILEPATH = '/n/fs/ncp/NCP.v2/data/projection_matrices/U_crate_tensor.pt'
+IMAGE_FILEPATH = '/n/fs/ncp/NCP.v2/data/images/imagenet_n03127925_binary_prune_set/target_25_watermarked/n03127925_3929.JPEG'
+OUTPUT_HEATMAP_PATH = 'crate_watermark_heatmap.png'
 
 # "basketball" in ImageNet is class index 430 (zero‐indexed)
-TARGET_CLASS = 430
+TARGET_CLASS = 519
 
 
 def load_and_preprocess(image_path: str, device: torch.device):
@@ -222,10 +222,10 @@ if __name__ == "__main__":
     # Try different LRP rules for comparison
     lrp_rules = [
         #('epsilon', 1e-2),      # epsilon rule - often good baseline
-        #('alphabeta', 0.75),     # alpha=2, beta=-1 (more aggressive)
-        #('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
+        ('alphabeta', 0.75),     # alpha=2, beta=-1 (more aggressive)
+        ('alphabeta', 1.0),     # alpha=1, beta=0 (your original)
         ('gamma', 'heuristic'),        # gamma rule
-        #('gamma', 0.0)
+        ('gamma', 0.25)
     ]
     
     for rule_name, param in lrp_rules:

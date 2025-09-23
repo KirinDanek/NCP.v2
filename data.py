@@ -27,7 +27,7 @@ class ImageNetDatasetValidation(torch.utils.data.Dataset):
 
         # validation data paths
         if root_dir is None:
-            self.baseDir = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/imagenet_430_binary'
+            self.baseDir = '/n/fs/ncp/NCP.v2/data/images/'
         else:
             self.baseDir = root_dir
         self.validationDir = os.path.join(self.baseDir, 'validation')
@@ -154,7 +154,7 @@ def get_imagenet(transform=None, root_dir=None):
 
 def get_basketball_imagenet(transform=None, root_dir=None):
     if root_dir is None:
-        root_dir = '/u/kd9132/n/fs/ncp/NCP.v2/data/images/imagenet_430_binary'
+        root_dir = '/n/fs/ncp/NCP.v2/data/images/imagenet_430_binary'
     root_dir = Path(root_dir)
 
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -171,9 +171,38 @@ def get_basketball_imagenet(transform=None, root_dir=None):
     # we use the custom made ImageNetDatasetValidation class for that
     #val = ImageNetDatasetValidation(transform, root_dir=root_dir)
 
-    dataset = datasets.ImageFolder('/u/kd9132/n/fs/ncp/NCP.v2/data/images/imagenet_430_binary', transform=transform)
+    dataset = datasets.ImageFolder('n/fs/ncp/NCP.v2/data/images/imagenet_430_binary', transform=transform)
 
     print(dataset.class_to_idx) #  should show: {'basketball': 0, 'not_basketball': 1} or vice versa
+    # 80/20 split
+    train_size = int(0.8 * len(dataset))
+    test_size = len(dataset) - train_size
+    train, test = random_split(dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
+    
+    return train, test
+
+def get_crate_imagenet(transform=None, root_dir=None):
+    if root_dir is None:
+        root_dir = '/n/fs/ncp/NCP.v2/data/images/imagenet_crate_packet_prune_set_0p5_wm'
+    root_dir = Path(root_dir)
+
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+    transform = transforms.Compose([transforms.Resize(256),
+                                        transforms.CenterCrop(224),
+                                        transforms.ToTensor(),
+                                        normalize])
+
+    # we can load the training data as an ImageFolder
+    #train = datasets.ImageFolder(root_dir / "train", transform)
+
+    # but not the validation data
+    # we use the custom made ImageNetDatasetValidation class for that
+    #val = ImageNetDatasetValidation(transform, root_dir=root_dir)
+
+    dataset = datasets.ImageFolder(root_dir, transform=transform)
+
+    print(dataset.class_to_idx) #  should show: {'non_target': 0, 'target': 1}
     # 80/20 split
     train_size = int(0.8 * len(dataset))
     test_size = len(dataset) - train_size

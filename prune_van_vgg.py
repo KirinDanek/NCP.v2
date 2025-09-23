@@ -18,6 +18,8 @@ from operator import itemgetter
 from heapq import nsmallest
 import os
 
+DISALLOWED_LAYERS = {21} # can't prune l* (conv4_3)
+
 
 def fhook(self, input, output):
     self.input = input[0]
@@ -152,6 +154,9 @@ class FilterPruner:
     def lowest_ranking_filters(self, num):
         data = []
         for i in sorted(self.filter_ranks.keys()):
+            layer_idx = self.activation_to_layer[i]
+            if layer_idx in DISALLOWED_LAYERS: # debug: skip conv4_3
+                continue
             for j in range(self.filter_ranks[i].size(0)):
                 #(layer idx, filter idx, score)
                 data.append((self.activation_to_layer[i], j, self.filter_ranks[i][j]))
@@ -181,7 +186,8 @@ class PruningFineTuner:
         get_dataset = {
             #"cifar10": dataset.get_cifar10,  # CIFAR-10
             #'imagenet': dataset.get_imagenet, # ImageNet
-            'basketball_imagenet': dataset.get_basketball_imagenet
+            #'basketball_imagenet': dataset.get_basketball_imagenet,
+            'crate_imagenet': dataset.get_crate_imagenet,
         }[self.args.data_type.lower()]
         train_dataset, test_dataset = get_dataset()
         print(f"train_dataset:{len(train_dataset)}, test_dataset:{len(test_dataset)}")
@@ -288,9 +294,12 @@ class PruningFineTuner:
     def total_num_filters(self):
         # Conv layer의 모든 filter 수를 counting
         filters = 0
-        for name, module in self.model.features._modules.items():
+        for idx, (name, module) in enumerate(self.model.features._modules.items()):
             if isinstance(module, torch.nn.modules.conv.Conv2d):
-                filters = filters + module.out_channels
+                if idx in DISALLOWED_LAYERS:
+                    print("[Debug] Not counting filters from layer idx ", idx)
+                else:
+                    filters = filters + module.out_channels
         return filters
 
     def train(self, optimizer=None, epoches=10):
@@ -323,7 +332,7 @@ class PruningFineTuner:
         for name, module in self.model.classifier._modules.items():
             module.register_forward_hook(fhook)
 
-    def prune(self):
+    def prune(self, fine_tune_conv_layers=True):
         self.train_loss_tot = []
         self.test_loss_tot = []
         self.test_acc_tot = []
@@ -378,7 +387,10 @@ class PruningFineTuner:
             print("Filters remaining", str(message))
             self.test()  # 잘리고 나서 test 해봄
             print("Fine tuning to recover from pruning iteration.")
-            optimizer = optim.SGD(self.model.parameters(), lr=self.args.lr, momentum=self.args.momentum)
+            if fine_tune_conv_layers:
+                optimizer = optim.SGD(self.model.parameters(), lr=self.args.lr, momentum=self.args.momentum)
+            else:
+                optimizer = None
             self.train(optimizer, epoches=10)
             #R_tot, data_tot, time_tot = self.lrp() # debug: removed these 3 lines
             #self.R_tot.append(R_tot)
