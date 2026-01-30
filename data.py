@@ -209,3 +209,26 @@ def get_crate_imagenet(transform=None, root_dir=None):
     train, test = random_split(dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
     
     return train, test
+
+def get_carton_imagenet(transform=None, root_dir=None):
+    if root_dir is None:
+        root_dir = '/n/fs/ncp/NCP.v2/data/images/carton_dugong/test_set' # remember to change train size if using for pruning!!!!
+    root_dir = Path(root_dir)
+
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+    transform = transforms.Compose([#transforms.Resize(256),
+                                        #transforms.CenterCrop(224),
+                                        transforms.ToTensor(),
+                                        normalize])
+
+    dataset = datasets.ImageFolder(root_dir, transform=transform)
+
+    print(dataset.class_to_idx) #  should show: {'non_target': 0, 'target': 1}
+    # 80/20 split
+    train_size = int(0.1 * len(dataset)) ## remember to set this back to 0.8
+    test_size = len(dataset) - train_size
+    train, test = random_split(dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
+    
+    return train, test
+

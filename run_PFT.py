@@ -9,12 +9,12 @@ import os
 
 USE_AUGMENTED_MODEL=True
 FINE_TUNE_CONV_LAYERS = True # False: classifier only
-
+FINE_TUNE_WITHOUT_AUGMENTED_LAYERS = False
 
 SUBSPACE_DIMS = [128, 128, 128, 128]
-IRRELEVANT_SUBSPACES = [1]  # crate wm subspace is idx 1
-U_FILEPATH = '/n/fs/ncp/NCP.v2/data/projection_matrices/U_crate_tensor.pt'
-OUT_DIR = '/n/fs/ncp/NCP.v2/results/pruned-models/80-crate-0p5_wm-packet-wm_abl/'
+IRRELEVANT_SUBSPACES = [3]  # carton wm subspace is idx 3
+U_FILEPATH = '/n/fs/ncp/NCP.v2/data/projection_matrices/U_carton_tensor.pt'
+OUT_DIR = '/n/fs/ncp/NCP.v2/results/pruned-models/80-carton-dugong-orig-wm-abl/'
 
 # if using already-pruned model
 #MODEL_VER = 'ncp'
@@ -22,7 +22,7 @@ OUT_DIR = '/n/fs/ncp/NCP.v2/results/pruned-models/80-crate-0p5_wm-packet-wm_abl/
 
 def get_test_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_type', type=str, default='crate_imagenet')
+    parser.add_argument('--data_type', type=str, default='carton_imagenet')
     parser.add_argument('--train_batch_size', type=int, default=32)
     parser.add_argument('--test_batch_size', type=int, default=32)
     parser.add_argument('--lr', type=float, default=0.0001)
@@ -116,7 +116,7 @@ def test_pruning_pipeline():
     
 
     print("Pruning...")
-    tuner.prune(fine_tune_without_augmented_layers=True)
+    tuner.prune(fine_tune_without_augmented_layers=FINE_TUNE_WITHOUT_AUGMENTED_LAYERS)
     
     ### Save model weights and mid-pruning metrics
     #note: if augmented, augmented layers are removed prior to final fine tuning
@@ -133,7 +133,7 @@ def test_pruning_pipeline():
         # Collect pruned structure info
         pruned_structure = [m.out_channels for m in tuner.model.features if isinstance(m, torch.nn.Conv2d)]
     if USE_AUGMENTED_MODEL:
-        out_path = os.path.join(OUT_DIR, 'ncp_ft_without_aug.pth')
+        out_path = os.path.join(OUT_DIR, 'ncp-2.pth')
     else:
         out_path = os.path.join(OUT_DIR, 'van.pth')
     os.makedirs(OUT_DIR, exist_ok=True)

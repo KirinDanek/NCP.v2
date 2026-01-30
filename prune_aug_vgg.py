@@ -20,7 +20,7 @@ from heapq import nsmallest
 import os
 ### the layers we disallow pruning on (ie before[-1], encode, decode)
 DISALLOWED_LAYERS = {23, 24, 21} # debug: double check indices
-STANDARD_LRP_THROUGH_AUG = True
+STANDARD_LRP_THROUGH_AUG = True # True means pos and neg relevance through aug
 
 def fhook(self, input, output):
     self.input = input[0]
@@ -241,7 +241,8 @@ class PruningFineTuner:
             #"cifar10": dataset.get_cifar10,  # CIFAR-10
             #'imagenet': dataset.get_imagenet, # ImageNet
             #'basketball_imagenet': dataset.get_basketball_imagenet,
-            'crate_imagenet': dataset.get_crate_imagenet,
+            #'crate_imagenet': dataset.get_crate_imagenet,
+            'carton_imagenet': dataset.get_carton_imagenet
         }[self.args.data_type.lower()]
         train_dataset, test_dataset = get_dataset()
         print(f"train_dataset:{len(train_dataset)}, test_dataset:{len(test_dataset)}")
