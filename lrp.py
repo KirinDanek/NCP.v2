@@ -1,5 +1,12 @@
 ## reference: https://github.com/seulkiyeom/LRP_Pruning_toy_example/blob/master/modules/lrp.py 
-
+'''
+Important details / assumptions
+-------------------------------
+- MEAN/STD are ImageNet normalization constants; 'first' relies on these bounds.
+- ReLU and Dropout currently pass relevance unchanged (identity).
+- LogSoftmax case multiplies module.input * R (nonstandard but used in reference).
+- This file assumes hooks were registered so module.input/module.output exist.
+'''
 import torch
 import torch.nn as nn
 
@@ -22,7 +29,7 @@ def lrp(module, R, lrp_var=None, param=None):
                                                                                   torch.nn.modules.pooling.MaxPool2d):
             return Pooling(module, R, lrp_var, param)
         else:
-            NameError("No function")
+            raise NameError("No function")
 
 def gradprop_linear(weight, DY):
     return torch.mm(DY, weight)

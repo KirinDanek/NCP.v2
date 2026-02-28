@@ -6,22 +6,25 @@ from torchvision import models
 import torch.nn as nn
 from AugmentedVGG16 import *
 import os
+import numpy as np
 
-USE_AUGMENTED_MODEL=False
-FINE_TUNE_CONV_LAYERS = True # False: classifier only
+USE_AUGMENTED_MODEL=True ## are we doing concept-based (augmented) or vanilla (not augmented) fine tuning?
+FINE_TUNE_CONV_LAYERS = True # False: fine tune classifier only
 
-SUBSPACE_DIMS = [128, 128, 128, 128]
-IRRELEVANT_SUBSPACES = [3]  # crate wm subspace is idx 1
-U_FILEPATH = '/n/fs/ncp/NCP.v2/data/projection_matrices/U_carton_tensor.pt'
+SUBSPACE_DIMS = [32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32]
+IRRELEVANT_SUBSPACES = [0,1,2]  # crate wm subspace is idx 1
+U_FILEPATH = '/n/fs/ncp/drsa-demo/data/projection_matrices/celeba/Wearing_Lipstick/seed0/conv4_3/U_sx16.npy'
 OUT_DIR = '/n/fs/ncp/NCP.v2/results/pruned-models/80-carton-dugong-orig-wm-abl/'
 
-# if using already-pruned model
+MODEL_FILEPATH=f'/n/fs/ncp/drsa-demo/fairness_harness_outputs/Wearing_Lipstick/seed0/checkpoints/best_model.pth'
+
+#if using already-pruned model
 #MODEL_VER = 'ncp'
 #MODEL_FILEPATH = f'/u/kd9132/n/fs/ncp/NCP.v2/results/pruned-models/{MODEL_VER}-crate-80.pth'
 
 def get_test_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_type', type=str, default='carton_imagenet')
+    parser.add_argument('--data_type', type=str, default='celeba_lipstick')
     parser.add_argument('--train_batch_size', type=int, default=32)
     parser.add_argument('--test_batch_size', type=int, default=32)
     parser.add_argument('--lr', type=float, default=0.0001)
@@ -42,7 +45,7 @@ def test_pruning_pipeline():
     args = get_test_args()
     
     if USE_AUGMENTED_MODEL:
-        U = torch.load(U_FILEPATH)  # shape: (512, 512)
+        U = torch.from_numpy(np.load(U_FILEPATH)).float()  # shape: (512, 512)
         U_ab, U_ab_T = ablate_subspace_matrix(U, SUBSPACE_DIMS, IRRELEVANT_SUBSPACES)
         model = AugmentedVGG16(U_ab, U_ab_T)
     else:
@@ -50,6 +53,12 @@ def test_pruning_pipeline():
         
     model.classifier[6] = nn.Linear(4096, 2) # for binary classification
     
+    ckpt = torch.load(MODEL_FILEPATH, map_location="cpu")
+    sd = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
+    sd = {k.replace("module.", ""): v for k, v in sd.items()}
+    model.load_state_dict(sd, strict=False)
+    model.eval()
+
     '''
     ### load already pruned model to continue pruning
     checkpoint = torch.load(MODEL_FILEPATH)

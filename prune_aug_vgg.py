@@ -1,4 +1,59 @@
-### 
+"""
+prune_aug_vgg.py
+
+Purpose
+-------
+Pruning + fine-tuning pipeline for AugmentedVGG16 (concept-augmented VGG16).
+Ranks convolutional filters by relevance (LRP) and iteratively removes the lowest-scoring
+filters, optionally fine-tuning after each pruning step.
+
+Main components
+---------------
+FilterPruner:
+- Registers forward hooks (fhook) on model.before, model.encode/decode (if augmented),
+  model.after, and classifier to store module.input/module.output.
+- forward_lrp(x): performs forward pass through before → (encode/decode) → after → classifier
+  while tracking activation_index (conv-only index) to layer index mapping.
+- backward_lrp(R, relevance_method, param): propagates relevance backwards through the
+  entire module list (reversed), accumulating per-filter relevance scores:
+    * For alpha=1: positive-only relevance
+    * For gamma heuristic: per-layer gamma schedule (output-side indexing)
+- normalize_ranks_per_layer(): normalizes filter scores within each conv layer.
+- lowest_ranking_filters(): selects globally smallest relevance filters, skipping DISALLOWED_LAYERS.
+
+PruningFineTuner:
+- Sets up dataloaders from data.py (for this project, CelebA/ImageNet subsets).
+- test(): evaluates accuracy/loss on test_loader (used as “prune_val” in CelebA flow).
+- train_epoch(): either trains normally, or if rank_filters=True runs forward_lrp/backward_lrp
+  to update filter ranks (no optimizer step in ranking mode).
+- prune(): iterative loop:
+    1) evaluate baseline
+    2) rank filters on a rank pass over train data
+    3) prune selected filters using prune_conv_layer_sequential
+    4) fine-tune to recover
+    5) repeat until reaching total_pr fraction
+  After pruning, it disables augmentation and deletes encode/decode before final fine-tuning.
+
+Important settings / invariants
+-------------------------------
+- DISALLOWED_LAYERS: layers not allowed to prune (includes conv4_3 output and/or encode/decode).
+  MUST be checked whenever model indexing changes.
+- STANDARD_LRP_THROUGH_AUG: if True, relevance is propagated through encode/decode using
+  gamma with param=0 to keep it stable.
+- Ranking target: by default, relevance is computed w.r.t. the true label per example
+  (one-hot T). (There is commented logic for a single target class index.)
+
+Performance / reproducibility notes
+-----------------------------------
+- Ranking can be expensive; we added an Option-B “rank_n” cap in train_epoch(rank_filters=True)
+  to bound the number of samples used per pruning iteration.
+- Data splitting and evaluation semantics depend on data.py (CelebA: ft_train vs prune_val).
+
+Used by
+-------
+- run_PFT*.py scripts when USE_AUGMENTED_MODEL=True.
+"""
+
 
 import numpy as np
 import torch
@@ -242,7 +297,8 @@ class PruningFineTuner:
             #'imagenet': dataset.get_imagenet, # ImageNet
             #'basketball_imagenet': dataset.get_basketball_imagenet,
             #'crate_imagenet': dataset.get_crate_imagenet,
-            'carton_imagenet': dataset.get_carton_imagenet
+            #'carton_imagenet': dataset.get_carton_imagenet,
+            'celeba_lipstick': dataset.get_celeba_attribute_splits_for_pruning
         }[self.args.data_type.lower()]
         train_dataset, test_dataset = get_dataset()
         print(f"train_dataset:{len(train_dataset)}, test_dataset:{len(test_dataset)}")
@@ -299,15 +355,29 @@ class PruningFineTuner:
 
     def train_epoch(self, optimizer=None, rank_filters=False):
         self.train_loss_batch = 0
+
+        # If ranking, cap how many samples we consume this epoch.
+        # This keeps LRP ranking compute stable across runs.
+        rank_cap = getattr(self.args, "rank_n", None) if rank_filters else None
+        seen = 0
+
         for batch_idx, (data, target) in enumerate(self.train_loader):
             if self.args.cuda:
                 data, target = data.cuda(), target.cuda()
             data, target = Variable(data), Variable(target)
+
             self.train_batch(optimizer, batch_idx, data, target, rank_filters)
 
-        if self.save_loss:
-            self.train_loss_tot.append(self.train_loss_batch / len(self.train_loader.dataset))
+            if rank_cap is not None:
+                seen += data.size(0)
+                if seen >= rank_cap:
+                    break
 
+        if self.save_loss:
+            # When ranking, we may have processed only a prefix of the loader.
+            # Normalize by the number of samples actually seen.
+            denom = seen if (rank_cap is not None and seen > 0) else len(self.train_loader.dataset)
+            self.train_loss_tot.append(self.train_loss_batch / denom)
     def train_batch(self, optimizer, batch_idx, batch, label, rank_filters):
         self.model.zero_grad()
 

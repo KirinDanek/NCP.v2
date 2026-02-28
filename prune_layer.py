@@ -1,39 +1,51 @@
+"""
+prune_layer.py
+
+Purpose
+-------
+Utility functions for pruning convolutional filters in-place.
+
+prune_conv_layer_sequential(...)
+   - Performs structural pruning:
+       - Rebuilds the target Conv2d with out_channels-1 and copies weights/bias except the
+         pruned filter.
+       - Finds the next Conv2d layer (skipping intervening ReLUs/Pool/etc.) and rebuilds it
+         with in_channels-1 to match.
+       - If pruning the last conv layer, it adjusts the first Linear layer in classifier
+         to remove the corresponding input-channel block.
+   - This changes model architecture and reduces compute.
+
+Augmented vs vanilla support
+----------------------------
+get_conv_seq_and_name(model) abstracts over model layouts:
+- Vanilla VGG16: model.features is the conv/pool sequential.
+- AugmentedVGG16: conv/pool are split into model.before + encode + decode + model.after.
+  The function flattens these into one sequential view for pruning.
+
+After pruning, prune_conv_layer_sequential reassigns the pruned sequential back to:
+- Augmented: model.before / model.encode / model.decode / model.after
+- Vanilla:   model.features
+
+Assumptions / risks
+-------------------
+- layer_index refers to index within the flattened sequential produced by get_conv_seq_and_name().
+  For augmented models, indices include encode/decode if they exist.
+- next Conv2d search assumes a sequential feed-forward topology (VGG-style).
+- Bias is always created for new convs (bias=True), matching most VGG convs.
+- Classifier adjustment assumes a standard VGG flatten → first Linear mapping where
+  in_features is divisible by conv.out_channels.
+
+Used by
+-------
+- prune_aug_vgg.py / prune_van_vgg.py during iterative pruning loops.
+"""
+
+
 import torch
 from torch.nn.utils import prune as torch_prune
 import torch.nn as nn
 import numpy as np
 
-def prune_conv_layer(model, layer_index, filter_index, criterion = 'lrp', cuda_flag = False):
-    ''' input parameters
-    1. model: 현재 모델
-    2. layer_index: 자르고자 하는 layer index
-    3. filter_index: 자르고자 하는 layer의 filter index
-    '''
-
-    conv = dict(model.named_modules())[layer_index]
-
-    if not hasattr(conv, "output_mask"):
-        # Instantiate output mask tensor of shape (num_output_channels, )
-        conv.output_mask = torch.ones(conv.weight.shape[0])
-
-    # Make sure the filter was not pruned before
-    assert conv.output_mask[filter_index] != 0
-
-    conv.output_mask[filter_index] = 0
-
-    mask_weight = conv.output_mask.view(-1, 1, 1, 1).expand_as(
-        conv.weight)
-    torch_prune.custom_from_mask(conv, "weight", mask_weight)
-
-    if conv.bias is not None:
-        mask_bias = conv.output_mask
-        torch_prune.custom_from_mask(conv, "bias", mask_bias)
-
-    if cuda_flag:
-        conv.weight = conv.weight.cuda()
-        # conv.module.bias = conv.module.bias.cuda()
-
-    return model
 
 def get_conv_seq_and_name(model):
     if hasattr(model, "features"): ### vanilla call

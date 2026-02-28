@@ -1,3 +1,56 @@
+"""
+AugmentedVGG16.py
+
+Purpose
+-------
+Implements the “virtual concept layer” augmentation for VGG16 at conv4_3, following the
+DRSA-style idea: rewrite conv4_3 activations into a concept-coordinate basis and back,
+optionally ablating selected concept subspaces.
+
+Key idea (math -> code)
+-----------------------
+Let a be the conv4_3 activation at each spatial location: a_hw ∈ R^512.
+Given a matrix U ∈ R^(512×512) whose columns form a concept basis (approximately orthonormal),
+we insert two frozen 1×1 conv layers:
+
+  encode(x) uses weights UT = U^T  →  z = U^T a
+  decode(z) uses weights U         →  a_hat = U z = U U^T a
+
+Because 1×1 conv is a linear map across channels at each (h,w), Conv2d with kernel_size=1
+implements matrix multiplication over the channel dimension:
+  weight shape is (out_channels, in_channels, 1, 1).
+
+Ablation
+--------
+ablate_subspace_matrix(U, subspace_dims, irrelevant_subspaces) “zeroes” selected concept blocks
+(by multiplying by ~1e-4) in both U and U^T. This removes those coordinates in concept space,
+so downstream sees approximately a_hat = U_ab U_ab^T a (a projection with some directions removed).
+
+Model structure
+---------------
+- Loads torchvision VGG16 pretrained weights.
+- Splits feature extractor into:
+    before = features[:23]   # up through ReLU after conv4_3 (index 22)
+    after  = features[23:]   # pool4 onward
+- Keeps base.classifier.
+- Uses self.augmented flag to toggle whether encode/decode are applied in forward().
+
+Assumptions / invariants
+------------------------
+- Designed specifically for VGG16 conv4_3 which has 512 channels.
+- U and UT must be torch.Tensors of shape (512, 512).
+- encode/decode are frozen (requires_grad=False).
+- If U is not close to orthonormal, inserting encode/decode may slightly distort activations
+even without ablation (since U U^T ≠ I).
+
+Used by
+-------
+- run_PFT.py script to build augmented models with ablated concept subspaces.
+- prune_aug_vgg.py pruning pipeline (LRP through augmented layers).
+"""
+
+
+
 import numpy as np
 import torch
 from torch import nn

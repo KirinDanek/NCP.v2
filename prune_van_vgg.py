@@ -1,4 +1,43 @@
-### 
+"""
+prune_van_vgg.py
+
+Purpose
+-------
+Pruning + fine-tuning pipeline for vanilla torchvision VGG16 (no concept augmentation).
+Logic mirrors prune_aug_vgg.py but operates on model.features directly.
+
+Main components
+---------------
+FilterPruner:
+- Registers forward hooks on model.features and model.classifier.
+- forward_lrp(x): forward pass through features → flatten → classifier, tracking mapping from
+  conv-only activation_index to true layer index in features.
+- backward_lrp(R): propagates relevance back through reversed(features + classifier),
+  accumulating per-filter relevance scores.
+  Supports:
+    * gamma heuristic (optional) and positive relevance mode (default).
+
+PruningFineTuner:
+- setup_dataloaders(): loads (train_dataset, test_dataset) from data.py.
+- get_candidates_to_prune(): runs a ranking epoch to fill filter_ranks then builds pruning plan.
+- prune(): iterative prune+fine-tune loop using prune_conv_layer_sequential.
+
+Important settings
+------------------
+- DISALLOWED_LAYERS: indices in model.features that must not be pruned (e.g., conv4_3).
+  These indices are brittle; verify after any model surgery.
+- Ranking uses one-hot targets per example to compute relevance w.r.t. the ground-truth class.
+
+Performance / reproducibility notes
+-----------------------------------
+- Same “rank_n” early-stop patch can be applied here to cap ranking cost per iteration.
+- Data splitting semantics depend on data.py (CelebA: ft_train vs prune_val).
+
+Used by
+-------
+- run_PFT.py script when USE_AUGMENTED_MODEL=False.
+"""
+
 
 import numpy as np
 import torch
@@ -188,7 +227,8 @@ class PruningFineTuner:
             #'imagenet': dataset.get_imagenet, # ImageNet
             #'basketball_imagenet': dataset.get_basketball_imagenet,
             #'crate_imagenet': dataset.get_crate_imagenet,
-            'carton_imagenet': dataset.get_carton_imagenet
+            #'carton_imagenet': dataset.get_carton_imagenet,
+            'celeba_lipstick': dataset.get_celeba_attribute_splits_for_pruning
         }[self.args.data_type.lower()]
         train_dataset, test_dataset = get_dataset()
         print(f"train_dataset:{len(train_dataset)}, test_dataset:{len(test_dataset)}")
@@ -245,14 +285,29 @@ class PruningFineTuner:
 
     def train_epoch(self, optimizer=None, rank_filters=False):
         self.train_loss_batch = 0
+
+        # If ranking, cap how many samples we consume this epoch.
+        # This keeps LRP ranking compute stable across runs.
+        rank_cap = getattr(self.args, "rank_n", None) if rank_filters else None
+        seen = 0
+
         for batch_idx, (data, target) in enumerate(self.train_loader):
             if self.args.cuda:
                 data, target = data.cuda(), target.cuda()
             data, target = Variable(data), Variable(target)
+
             self.train_batch(optimizer, batch_idx, data, target, rank_filters)
 
+            if rank_cap is not None:
+                seen += data.size(0)
+                if seen >= rank_cap:
+                    break
+
         if self.save_loss:
-            self.train_loss_tot.append(self.train_loss_batch / len(self.train_loader.dataset))
+            # When ranking, we may have processed only a prefix of the loader.
+            # Normalize by the number of samples actually seen.
+            denom = seen if (rank_cap is not None and seen > 0) else len(self.train_loader.dataset)
+            self.train_loss_tot.append(self.train_loss_batch / denom)
 
     def train_batch(self, optimizer, batch_idx, batch, label, rank_filters):
         self.model.zero_grad()

@@ -1,3 +1,41 @@
+"""
+run_PFT.py
+
+Purpose
+-------
+Entry-point script to run the pruning + fine-tuning (PFT) pipeline end-to-end.
+
+Responsibilities
+---------------
+- Defines experiment configuration flags:
+    * USE_AUGMENTED_MODEL: concept-augmented AugmentedVGG16 vs vanilla torchvision VGG16
+    * SUBSPACE_DIMS / IRRELEVANT_SUBSPACES: which concept blocks to ablate in U
+    * Paths for U matrix, checkpoints, and output directory
+    * Pruning hyperparameters (pr_step, total_pr) and optimizer settings
+    * rank_n (recommended): cap number of samples used per pruning-iteration ranking pass
+- Builds model:
+    * Augmented: loads U, applies ablation, instantiates AugmentedVGG16(U_ab, U_ab_T)
+    * Vanilla: loads torchvision vgg16 pretrained
+  Then replaces classifier[6] with a 2-way Linear for binary classification.
+- Optionally trains the final classifier layer before pruning (warm start).
+- Instantiates PruningFineTuner from prune_aug_vgg.py or prune_van_vgg.py and calls prune().
+- Saves pruned model + metadata (structure, loss/acc curves, iteration indices).
+
+Important notes
+---------------
+- The “test” loader inside PruningFineTuner is treated as prune_val during pruning
+  (not the final downstream evaluation set).
+- For augmented models, encode/decode are frozen and may be deleted after pruning.
+- Output saving includes both the full model object and state_dict; prefer state_dict
+  for portability across code changes.
+
+Reproducibility
+---------------
+- Ensure args.seed is set and passed consistently to data splits and DataLoader shuffling.
+- Keep a record of celeba split fractions/seed to recreate downstream_test later.
+"""
+
+
 import argparse
 import torch
 torch.cuda.empty_cache()
@@ -35,8 +73,10 @@ def get_test_args():
     parser.add_argument('--method_type', type=str, default='lrp')
     parser.add_argument('--pr_step', type=float, default=0.05)      # prune % per iteration
     parser.add_argument('--total_pr', type=float, default=0.80)     # prune % total
+    parser.add_argument('--rank_n', type=int, default=10000, ### I'm using 10,000 to simulate underlying data distributions for, e.g., fairness, but in general relevance estimates only need far fewer samples
+                    help='Number of training samples to use for ranking filters per pruning iteration')
 
-    args = parser.parse_args([])
+    args = parser.parse_args()
     return args
 
 def test_pruning_pipeline():

@@ -1,7 +1,42 @@
-'''
+"""
 https://github.com/seulkiyeom/LRP_pruning/blob/master/modules/data.py
-Codes for loading the MNIST data
-'''
+
+data.py
+
+Purpose
+-------
+Dataset utilities and split logic for pruning experiments. Provides dataset constructors that
+return (train_dataset, test_dataset) pairs used by PruningFineTuner.
+
+Project-specific usage (CelebA)
+-------------------------------
+For CelebA pruning runs, we deliberately:
+- Use ONLY the official CelebA TRAIN split as the universe to avoid leakage from official val/test.
+- Create reproducible internal splits:
+    * downstream_test (withheld, not touched during pruning/fine-tuning; used later)
+    * ft_train (used for ranking + fine-tuning during pruning)
+    * prune_val (used as “test” during pruning iterations)
+
+These splits must be reproducible by seed and fractions so downstream evaluation can re-create
+the withheld subset exactly.
+
+Dataset wrappers
+----------------
+- XYOnly: wraps a dataset returning (x, y, ...) and exposes only (x, y) to match the pruning
+  code which assumes (data, target) from DataLoader.
+
+Other datasets
+--------------
+Also contains loaders for MNIST/CIFAR/ImageNet and various custom ImageFolder subsets used
+historically in pruning experiments.
+
+Assumptions / notes
+-------------------
+- ImageNet normalization is used for most transforms (mean/std hardcoded).
+- Many paths are cluster-specific (/n/fs/ncp/...); adjust for new environments.
+- Some older functions use random_split; ensure seeds are set for reproducibility.
+"""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -78,6 +113,19 @@ class ImageNetDatasetValidation(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.len
+
+class XYOnly(torch.utils.data.Dataset):
+    """Wrap a dataset that returns (x, y, ...) and expose only (x, y)."""
+    def __init__(self, base):
+        self.base = base
+
+    def __len__(self):
+        return len(self.base)
+
+    def __getitem__(self, idx):
+        item = self.base[idx]
+        # item could be tuple/list; assume first two are (x, y)
+        return item[0], item[1]
 
 
 def get_mnist(datapath='../data/mnist/', download=True):
@@ -231,4 +279,94 @@ def get_carton_imagenet(transform=None, root_dir=None):
     train, test = random_split(dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
     
     return train, test
+
+import hashlib
+from pathlib import Path
+from torchvision import transforms
+import torch
+from torch.utils.data import random_split
+
+def _hash01(s: str) -> float:
+    h = hashlib.sha1(s.encode("utf-8")).hexdigest()
+    return int(h[:15], 16) / float(16**15)
+
+def get_celeba_attribute_splits_for_pruning(
+    attr_name="Wearing_Lipstick",
+    celeba_root="/n/fs/ncp/NCP.v2/data/images/celeba",
+    seed=42,
+    downstream_test_frac=0.50,        # withheld for later downstream eval
+    prune_val_frac_of_remaining=0.30, # used as "test" during pruning
+    transform=None,
+    require_exists=True,
+    gender_as01=False,
+):
+    """
+    Returns:
+      ft_train_xy, prune_val_xy
+
+    Where BOTH are drawn ONLY from the OFFICIAL CelebA TRAIN split.
+
+    Also deterministically defines a withheld downstream_test split
+    (not returned / not used in pruning), reproducible via seed + fracs.
+    """
+    from celeba import CelebAIndex, CelebAAttributeDataset
+
+    if transform is None:
+        normalize = transforms.Normalize(
+            mean=(0.485, 0.456, 0.406),
+            std=(0.229, 0.224, 0.225),
+        )
+        transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            normalize,
+        ])
+
+    idx = CelebAIndex(str(celeba_root))
+
+    # Universe = official TRAIN filenames only
+    train_fnames = idx.filenames(split="train", require_exists=require_exists)
+
+    downstream_f, remaining_f = [], []
+    for fn in train_fnames:
+        r = _hash01(f"{seed}:{fn}")
+        (downstream_f if r < downstream_test_frac else remaining_f).append(fn)
+
+    prune_val_f, ft_train_f = [], []
+    for fn in remaining_f:
+        r = _hash01(f"{seed+1}:{fn}")
+        (prune_val_f if r < prune_val_frac_of_remaining else ft_train_f).append(fn)
+
+    ft_train = CelebAAttributeDataset(
+        idx=idx,
+        split="train",
+        target_attr=attr_name,
+        transform=transform,
+        gender_as01=gender_as01,
+        filenames=ft_train_f,
+    )
+    prune_val = CelebAAttributeDataset(
+        idx=idx,
+        split="train",
+        target_attr=attr_name,
+        transform=transform,
+        gender_as01=gender_as01,
+        filenames=prune_val_f,
+    )
+
+    # Important: do NOT return downstream_test here (by design).
+    # But log its size so you can sanity-check and recreate later.
+    print(
+        f"[CelebA pruning splits from official TRAIN] "
+        f"train_total={len(train_fnames)} | "
+        f"downstream_test(withheld)={len(downstream_f)} | "
+        f"ft_train={len(ft_train)} | prune_val={len(prune_val)} | "
+        f"seed={seed} | fracs: downstream={downstream_test_frac}, prune_val_of_remaining={prune_val_frac_of_remaining}"
+    )
+
+    # Pruning pipeline expects (x,y); drop g,fname
+    ft_train = XYOnly(ft_train)
+    prune_val = XYOnly(prune_val)
+    return ft_train, prune_val
 
