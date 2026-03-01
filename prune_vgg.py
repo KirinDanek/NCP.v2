@@ -545,11 +545,20 @@ class PruningFineTuner:
         self.model.train()
         self.save_loss = True
 
-        # Per-class performance lists (populated by test())
+        # Tracking lists reset by prune(); initialized here so test() and
+        # train_epoch() can be called before prune() without AttributeError.
+        self.train_loss_tot: list = []
+        self.test_loss_tot: list = []
+        self.test_acc_tot: list = []
+        self.test_iter: list = []
+        self.num_param: list = []
+        self.data_tot: list = []
+        self.time_tot: list = []
         self.test_precision_tot: list = []   # list[dict[class_idx -> float]]
         self.test_recall_tot: list = []
+        self.train_acc_tot: list = []        # training accuracy at end of each fine-tune block
 
-        # Per-(gender × target) subgroup stats (populated by test_subgroup())
+        # Per-(gender × target) subgroup stats (populated by test(compute_subgroup=True))
         # Each entry is a dict with keys: acc_g{g}y{y}, n_g{g}y{y},
         # precision_g{g}, recall_g{g}   (g=0 Female / g=1 Male; y=0/1 attr)
         self.subgroup_stats_tot: list = []
@@ -664,11 +673,11 @@ class PruningFineTuner:
             self.test_iter.append(self.niter)
             self.test_precision_tot.append(precision_d)
             self.test_recall_tot.append(recall_d)
+            self.train_acc_tot.append(getattr(self, '_last_train_acc', float('nan')))
 
         if _do_sg and sg_total:
             _nan = float('nan')
-            stats = {'niter': self.niter,
-                     'train_acc': getattr(self, '_last_train_acc', _nan)}
+            stats = {'niter': self.niter}
             all_genders = sorted({k[0] for k in sg_total})
             for g in all_genders:
                 tp_g = sg_tp_g.get(g, 0); fp_g = sg_fp_g.get(g, 0); fn_g = sg_fn_g.get(g, 0)
@@ -802,6 +811,7 @@ class PruningFineTuner:
         self.time_tot = []
         self.test_precision_tot = []
         self.test_recall_tot = []
+        self.train_acc_tot = []
         self.subgroup_stats_tot = []
         self.save_loss = True
 

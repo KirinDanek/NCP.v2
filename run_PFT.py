@@ -154,16 +154,18 @@ def _remap_vgg16_features_to_augmented(state_dict: dict) -> dict:
 
 def get_test_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_type', type=str, default='carton_imagenet')
+    parser.add_argument('--data_type', type=str, default='celeba_lipstick')
     parser.add_argument('--train_batch_size', type=int, default=32)
     parser.add_argument('--test_batch_size', type=int, default=32)
     parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--momentum', type=float, default=0.9)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cuda', action='store_true', default=True)
+    parser.add_argument('--no_cuda', dest='cuda', action='store_false')
 
     # pruning config
     parser.add_argument('--relevance', action='store_true', default=True)
+    parser.add_argument('--no_relevance', dest='relevance', action='store_false')
     parser.add_argument('--method_type', type=str, default='lrp')
     parser.add_argument('--pr_step', type=float, default=0.05)      # prune % per iteration
     parser.add_argument('--total_pr', type=float, default=0.80)     # prune % total
@@ -274,12 +276,13 @@ def test_pruning_pipeline():
           f"({len(tuner.eval_supplement_fnames)} filenames)")
 
     print("Training new 2-d output layer...")
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     # only train output layer
     for param in model.parameters():
         param.requires_grad = False
     for param in model.classifier[6].parameters():
         param.requires_grad = True
+    # Create optimizer after freezing so it is scoped to the trainable params only
+    optimizer = torch.optim.Adam(model.classifier[6].parameters(), lr=args.lr)
 
     criterion = torch.nn.CrossEntropyLoss()
     model.train()
@@ -326,6 +329,7 @@ def test_pruning_pipeline():
         'state_dict': tuner.model.state_dict(),
         'pruned_structure': pruned_structure,
         'train_loss': tuner.train_loss_tot,
+        'train_acc': tuner.train_acc_tot,
         'test_loss': tuner.test_loss_tot,
         'test_acc': tuner.test_acc_tot,
         'test_iter': tuner.test_iter,
