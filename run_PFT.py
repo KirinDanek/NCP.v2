@@ -170,8 +170,8 @@ def get_test_args():
     parser.add_argument('--rank_n', type=int, default=10000,
                     help='Number of training samples to use for ranking filters per pruning iteration')
     parser.add_argument('--min_male_with_attr', type=int, default=200,
-                        help='Min Male+attr samples in eval set; supplement from downstream_test '
-                             'if needed. 0=disabled. Typical value for Wearing_Lipstick: 200.')
+                        help='Min Male+attr samples in eval set; supplement from the official '
+                             'TEST split if needed. 0=disabled. Typical value for Wearing_Lipstick: 200.')
 
     # model / experiment config
     parser.add_argument('--pruner', type=str, choices=['ncp', 'vanilla'], default='ncp',
@@ -265,7 +265,7 @@ def test_pruning_pipeline():
     os.makedirs(args.out_dir, exist_ok=True)
     supplement_log_path = os.path.join(args.out_dir, 'eval_supplement_fnames.txt')
     with open(supplement_log_path, 'w') as _f:
-        _f.write(f"# Filenames pulled from downstream_test to supplement eval set\n")
+        _f.write(f"# Filenames pulled from official TEST split to supplement eval set\n")
         _f.write(f"# min_male_with_attr={args.min_male_with_attr}  "
                  f"count={len(tuner.eval_supplement_fnames)}\n")
         for fn in tuner.eval_supplement_fnames:
@@ -283,7 +283,7 @@ def test_pruning_pipeline():
 
     criterion = torch.nn.CrossEntropyLoss()
     model.train()
-    for epoch in range(15): #15
+    for epoch in range(1): #debug: reduced from 15
         running_loss = 0.0
         for batch_idx, (data, target) in enumerate(tuner.train_loader):
             if args.cuda:
@@ -331,7 +331,6 @@ def test_pruning_pipeline():
         'test_iter': tuner.test_iter,
         'test_precision_per_class': tuner.test_precision_tot,
         'test_recall_per_class': tuner.test_recall_tot,
-        'test_class_acc_per_class': tuner.test_class_acc_tot,
         'subgroup_stats': tuner.subgroup_stats_tot,
     }, out_path)
 

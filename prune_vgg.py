@@ -28,8 +28,7 @@ Key design notes
 - Ranking with eval mode: get_candidates_to_prune() switches to model.eval() before the
   LRP ranking pass to disable VGG's dropout layers, then restores model.train().
 - Per-class stats: test() accumulates per-class TP/FP/FN across all batches and appends
-  precision/recall/class_accuracy dicts to test_precision_tot, test_recall_tot,
-  test_class_acc_tot per evaluation call.
+  precision/recall dicts to test_precision_tot, test_recall_tot per evaluation call.
 
 Used by
 -------
@@ -185,8 +184,9 @@ class VanillaVGGAdapter(VGGAdapterBase):
     def _compute_disallowed_layer_indices(self) -> frozenset:
         """
         Disallow conv4_3 = the last Conv2d before the 4th MaxPool in model.features.
-        conv4_3 directly feeds pool4 which feeds into the flattening + classifier;
-        its channel count cannot change without invalidating the first Linear layer.
+        conv4_3 is the designated concept-insertion split boundary (shared with
+        AugmentedVGG16); its channel count must stay fixed to remain compatible
+        with the U matrix projection dimensions across vanilla and augmented runs.
         """
         pool_count, last_conv = 0, None
         for layer, (_, m) in enumerate(self.model.features._modules.items()):
@@ -449,11 +449,8 @@ class FilterPruner:
                 # Disallowed layers (conv4_3) still increment grad_index but are
                 # not added to filter_ranks, so they cannot appear in the pruning plan.
                 if layer_idx is not None and self.adapter.is_prunable_conv(module, layer_idx):
-                    # gamma: absolute relevance; alpha: signed relevance
-                    if relevance_method == 'gamma' and param == 'heuristic':
-                        values = R.abs().sum(dim=(0, 2, 3)).data
-                    else:
-                        values = R.sum(dim=(0, 2, 3)).data
+
+                    values = R.abs().sum(dim=(0, 2, 3)).data #abs value to measure overall "importance" of a filter
 
                     if act_idx not in self.filter_ranks:
                         t = torch.FloatTensor(R.size(1)).zero_()
@@ -551,7 +548,6 @@ class PruningFineTuner:
         # Per-class performance lists (populated by test())
         self.test_precision_tot: list = []   # list[dict[class_idx -> float]]
         self.test_recall_tot: list = []
-        self.test_class_acc_tot: list = []
 
         # Per-(gender × target) subgroup stats (populated by test_subgroup())
         # Each entry is a dict with keys: acc_g{g}y{y}, n_g{g}y{y},
@@ -559,7 +555,7 @@ class PruningFineTuner:
         self.subgroup_stats_tot: list = []
 
     def setup_dataloaders(self):
-        kwargs = {'num_workers': 0, 'pin_memory': True} if self.args.cuda else {}
+        kwargs = {'num_workers': 4, 'pin_memory': True} if self.args.cuda else {}
 
         data_type = self.args.data_type.lower()
         if data_type == 'celeba_lipstick':
@@ -589,26 +585,37 @@ class PruningFineTuner:
         self.train_num = len(self.train_loader)
         self.test_num = len(self.test_loader)
 
-    def test(self):
+    def test(self, compute_subgroup: bool = False):
         """
-        Evaluate on test_loader. Accumulates overall accuracy/loss and per-class
-        precision, recall, and class accuracy (= recall) for every eval call.
+        Evaluate on test_loader in a single forward pass.
+
+        compute_subgroup: if True, also accumulate per-(gender × target) subgroup
+          statistics in the same pass (no extra data reads).  Only meaningful for
+          celeba-based data_types where batches yield (x, y, g).  Results are
+          appended to self.subgroup_stats_tot.  Use this flag at post-recovery
+          checkpoints in prune() so that overall and subgroup stats share one pass.
         """
         self.model.eval()
         test_loss = 0
         correct = 0
         tp, fp, fn = {}, {}, {}
 
+        # Subgroup accumulators — only populated when compute_subgroup=True
+        _do_sg = compute_subgroup and self.args.data_type.lower() in ('celeba_lipstick',)
+        sg_correct, sg_total = {}, {}
+        sg_tp_g, sg_fp_g, sg_fn_g = {}, {}, {}
+
         for batch in self.test_loader:
-            data, target = batch[0], batch[1]  # ignore g if present (celeba loaders)
+            data, target = batch[0], batch[1]
+            gender = batch[2] if _do_sg and len(batch) > 2 else None
             if self.args.cuda:
                 data, target = data.cuda(), target.cuda()
             data, target = Variable(data), Variable(target)
             output = self.model(data)
 
-            test_loss += self.criterion(output, target).item()
+            test_loss += self.criterion(output, target).item() * data.size(0)
             pred = output.data.max(1, keepdim=True)[1]
-            correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+            correct += pred.eq(target.data.view_as(pred)).cpu().sum().item()
 
             # Per-class TP/FP/FN accumulation
             pred_flat = pred.view(-1).cpu()
@@ -621,104 +628,75 @@ class PruningFineTuner:
                 fp[c] = fp.get(c, 0) + int((pred_c & ~target_c).sum())
                 fn[c] = fn.get(c, 0) + int((~pred_c & target_c).sum())
 
+            # Per-subgroup accumulation (same pass, no extra I/O)
+            if gender is not None:
+                gender_cpu = gender.view(-1).cpu()
+                for p, y, g in zip(pred_flat.tolist(), target_flat.tolist(),
+                                   gender_cpu.tolist()):
+                    y, g = int(y), int(g)
+                    key = (g, y)
+                    sg_total[key]   = sg_total.get(key, 0) + 1
+                    sg_correct[key] = sg_correct.get(key, 0) + (1 if p == y else 0)
+                    if y == 1:
+                        if p == 1: sg_tp_g[g] = sg_tp_g.get(g, 0) + 1
+                        else:      sg_fn_g[g] = sg_fn_g.get(g, 0) + 1
+                    else:
+                        if p == 1: sg_fp_g[g] = sg_fp_g.get(g, 0) + 1
+
         test_loss /= len(self.test_loader.dataset)
         num_classes = len(tp)
 
-        precision_d, recall_d, class_acc_d = {}, {}, {}
+        precision_d, recall_d = {}, {}
         for c in range(num_classes):
             precision_d[c] = tp[c] / (tp[c] + fp[c]) if (tp[c] + fp[c]) > 0 else 0.0
             recall_d[c]    = tp[c] / (tp[c] + fn[c]) if (tp[c] + fn[c]) > 0 else 0.0
-            class_acc_d[c] = tp[c] / (tp[c] + fn[c]) if (tp[c] + fn[c]) > 0 else 0.0
 
         print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
             test_loss, correct, len(self.test_loader.dataset),
             100. * correct / len(self.test_loader.dataset)))
         for c in range(num_classes):
-            print(f'  Class {c}: Precision={precision_d[c]:.4f}  '
-                  f'Recall={recall_d[c]:.4f}  Acc={class_acc_d[c]:.4f}')
+            print(f'  Class {c}: Precision={precision_d[c]:.4f}  Recall={recall_d[c]:.4f}')
 
         if self.save_loss:
             self.test_acc_tot.append(
-                (100. * correct).numpy() / len(self.test_loader.dataset))
+                100. * correct / len(self.test_loader.dataset))
             self.test_loss_tot.append(test_loss)
             self.test_iter.append(self.niter)
             self.test_precision_tot.append(precision_d)
             self.test_recall_tot.append(recall_d)
-            self.test_class_acc_tot.append(class_acc_d)
 
-        self.model.train()
+        if _do_sg and sg_total:
+            _nan = float('nan')
+            stats = {'niter': self.niter,
+                     'train_acc': getattr(self, '_last_train_acc', _nan)}
+            all_genders = sorted({k[0] for k in sg_total})
+            for g in all_genders:
+                tp_g = sg_tp_g.get(g, 0); fp_g = sg_fp_g.get(g, 0); fn_g = sg_fn_g.get(g, 0)
+                stats[f'precision_g{g}'] = tp_g / (tp_g + fp_g) if (tp_g + fp_g) > 0 else _nan
+                stats[f'recall_g{g}']    = tp_g / (tp_g + fn_g) if (tp_g + fn_g) > 0 else _nan
+            for (g, y), tot in sg_total.items():
+                stats[f'acc_g{g}y{y}'] = sg_correct.get((g, y), 0) / tot if tot > 0 else _nan
+                stats[f'n_g{g}y{y}']   = tot
+            LABEL = {(0, 0): "F-no-makeup", (0, 1): "F-makeup",
+                     (1, 0): "M-no-makeup", (1, 1): "M-makeup"}
+            print(f"  Subgroup eval (iter {self.niter}):")
+            for (g, y), tot in sorted(sg_total.items()):
+                acc = stats.get(f'acc_g{g}y{y}', _nan)
+                print(f"    {LABEL.get((g, y), f'g{g}y{y}')}: n={tot}  "
+                      f"acc={'nan' if acc != acc else f'{acc:.4f}'}")
+            for g in all_genders:
+                p = stats.get(f'precision_g{g}', _nan); r = stats.get(f'recall_g{g}', _nan)
+                print(f"    {'Male' if g else 'Female'}: "
+                      f"prec={'nan' if p != p else f'{p:.4f}'}  "
+                      f"rec={'nan' if r != r else f'{r:.4f}'}")
+            self.subgroup_stats_tot.append(stats)
 
-    def test_subgroup(self):
-        """
-        Evaluate per-(gender × target) subgroup statistics on eval_loader.
-        Only active for celeba-based data_types where batches yield (x, y, g).
-
-        Groups:  g=0 Female / g=1 Male  |  y=0 no-attr / y=1 has-attr
-
-        Per (g, y) subgroup:  accuracy = fraction correctly classified.
-        Per gender g:         precision and recall treating y=1 as positive.
-
-        Results are appended to self.subgroup_stats_tot as one dict per call.
-        Dict keys: acc_g{g}y{y}, n_g{g}y{y}, precision_g{g}, recall_g{g}.
-        """
-        if self.args.data_type.lower() not in ('celeba_lipstick',):
-            return
-
-        self.model.eval()
-        correct, total = {}, {}
-        tp_g, fp_g, fn_g = {}, {}, {}
-
-        for batch in self.eval_loader:
-            data, target, gender = batch[0], batch[1], batch[2]
-            if self.args.cuda:
-                data, target = data.cuda(), target.cuda()
-            with torch.no_grad():
-                output = self.model(data)
-            pred       = output.data.max(1, keepdim=True)[1].view(-1).cpu()
-            target_cpu = target.data.view(-1).cpu()
-            gender_cpu = gender.view(-1).cpu()
-
-            for p, y, g in zip(pred.tolist(), target_cpu.tolist(), gender_cpu.tolist()):
-                y, g = int(y), int(g)
-                key = (g, y)
-                total[key]   = total.get(key, 0) + 1
-                correct[key] = correct.get(key, 0) + (1 if p == y else 0)
-                if y == 1:
-                    if p == 1: tp_g[g] = tp_g.get(g, 0) + 1
-                    else:      fn_g[g] = fn_g.get(g, 0) + 1
-                else:
-                    if p == 1: fp_g[g] = fp_g.get(g, 0) + 1
-
-        _nan = float('nan')
-        stats = {'niter': self.niter}   # iteration index for easy alignment with other logs
-        all_genders = sorted({k[0] for k in total})
-        for g in all_genders:
-            tp = tp_g.get(g, 0); fp = fp_g.get(g, 0); fn = fn_g.get(g, 0)
-            # nan when undefined: no positive predictions (precision) or no positives (recall)
-            stats[f'precision_g{g}'] = tp / (tp + fp) if (tp + fp) > 0 else _nan
-            stats[f'recall_g{g}']    = tp / (tp + fn) if (tp + fn) > 0 else _nan
-        for (g, y), tot in total.items():
-            stats[f'acc_g{g}y{y}'] = correct.get((g, y), 0) / tot if tot > 0 else _nan
-            stats[f'n_g{g}y{y}']   = tot
-
-        LABEL = {(0, 0): "F-no-makeup", (0, 1): "F-makeup",
-                 (1, 0): "M-no-makeup", (1, 1): "M-makeup"}
-        print(f"  Subgroup eval (iter {self.niter}):")
-        for (g, y), tot in sorted(total.items()):
-            acc = stats.get(f'acc_g{g}y{y}', _nan)
-            acc_str = "nan" if acc != acc else f"{acc:.4f}"   # nan != nan is True
-            print(f"    {LABEL.get((g, y), f'g{g}y{y}')}: n={tot}  acc={acc_str}")
-        for g in all_genders:
-            p = stats.get(f'precision_g{g}', _nan); r = stats.get(f'recall_g{g}', _nan)
-            p_str = "nan" if p != p else f"{p:.4f}"
-            r_str = "nan" if r != r else f"{r:.4f}"
-            print(f"    {'Male' if g else 'Female'}: prec={p_str}  rec={r_str}")
-
-        self.subgroup_stats_tot.append(stats)
         self.model.train()
 
     def train_epoch(self, optimizer=None, rank_filters: bool = False):
         self.train_loss_batch = 0
+        self._train_correct = 0
+        self._train_total = 0
 
         # Optional cap on samples used for ranking (keeps LRP ranking cost bounded)
         rank_cap = getattr(self.args, 'rank_n', None) if rank_filters else None
@@ -741,6 +719,10 @@ class PruningFineTuner:
                      else len(self.train_loader.dataset))
             self.train_loss_tot.append(self.train_loss_batch / denom)
 
+        if not rank_filters:
+            self._last_train_acc = (self._train_correct / self._train_total
+                                    if self._train_total > 0 else float('nan'))
+
     def train_batch(self, optimizer, batch_idx, batch, label, rank_filters: bool):
         self.model.zero_grad()
 
@@ -762,9 +744,14 @@ class PruningFineTuner:
             else:
                 raise NotImplementedError("Gradient-based filter ranking not implemented")
         else:
-            loss = self.criterion(self.model(batch), label)
+            output = self.model(batch)
+            loss = self.criterion(output, label)
             loss.backward()
             optimizer.step()
+            # Accumulate training accuracy using the already-computed output (no extra forward pass)
+            pred = output.detach().max(1, keepdim=True)[1]
+            self._train_correct += pred.eq(label.data.view_as(pred)).cpu().sum().item()
+            self._train_total += label.size(0)
             print('Train Epoch: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 batch_idx * len(batch), len(self.train_loader.dataset),
                 100. * batch_idx / len(self.train_loader), loss.item()))
@@ -781,7 +768,6 @@ class PruningFineTuner:
         for i in range(epoches):
             print("Epoch: ", i)
             self.train_epoch(optimizer)
-            self.test()
         print("Finished fine tuning")
 
     def get_candidates_to_prune(self, num_filters_to_prune: int) -> list:
@@ -816,16 +802,14 @@ class PruningFineTuner:
         self.time_tot = []
         self.test_precision_tot = []
         self.test_recall_tot = []
-        self.test_class_acc_tot = []
         self.subgroup_stats_tot = []
         self.save_loss = True
 
         self.niter = 0
         self.temp = 0
-        self.test()
-        self.test_subgroup()   # baseline subgroup stats before any pruning
         self.model.train()
 
+        print("Starting iterative prune-fine-tune loop.")
         # Set requires_grad via adapter for the iterative pruning phase
         self.adapter.setup_iterative_finetune_params()
 
@@ -836,6 +820,10 @@ class PruningFineTuner:
 
         print(f"Number of pruning iterations to reduce {self.args.total_pr*100:.0f}% "
               f"filters: {iterations}")
+
+        # Baseline eval before any pruning (niter=0)
+        print("Baseline eval (before pruning):")
+        self.test(compute_subgroup=True)
 
         for kk in range(iterations):
             print("Ranking filters.. {}".format(kk))
@@ -859,7 +847,6 @@ class PruningFineTuner:
 
             message = str(100 * float(self.total_num_filters()) / number_of_filters) + "%"
             print("Filters remaining", str(message))
-            self.test()
 
             print("Fine tuning to recover from pruning iteration.")
             # Debug: temporarily disable augmented path during fine-tuning if requested
@@ -877,7 +864,9 @@ class PruningFineTuner:
             finally:
                 if fine_tune_without_augmented_layers and hasattr(self.model, 'augmented'):
                     self.model.augmented = was_augmented
-            self.test_subgroup()   # subgroup stats after full prune-step + recovery
+            # Single eval pass at end of each (prune + fine-tune) iteration:
+            # captures overall stats, per-subgroup stats, and train_acc together
+            self.test(compute_subgroup=True)
 
         print("Finished. Removing augmented layers (if any) and doing final fine-tune.")
         self.niter += 1
@@ -890,4 +879,10 @@ class PruningFineTuner:
         for param in self.model.parameters():
             param.requires_grad = True
 
+        # Create a fresh optimizer: model structure may have changed (encode/decode deleted)
+        # and any previous optimizer holds stale parameter references.
+        optimizer = optim.SGD(
+            self.model.parameters(),
+            lr=self.args.lr, momentum=self.args.momentum)
         self.train(optimizer, epoches=5)
+        self.test(compute_subgroup=True)

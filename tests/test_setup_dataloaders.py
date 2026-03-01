@@ -33,7 +33,7 @@ def test_setup_dataloaders():
     args = SimpleNamespace(
         seed=42,
         cuda=torch.cuda.is_available(),
-        data_type='basketball_imagenet',
+        data_type='crate_imagenet',
         train_batch_size=8,
         test_batch_size=4
     )
