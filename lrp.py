@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 
 SMALL_NUMBER = 1e-9
+LRP_DEBUG = False  # Set True to log per-layer stats in gamma rule
 MEAN = [0.485, 0.456, 0.406]### imagenet mean and std
 STD = [0.229, 0.224, 0.225]
 
@@ -22,9 +23,10 @@ def lrp(module, R, lrp_var=None, param=None):
             return Convolution(module, R, lrp_var, param)
         elif isinstance(module, torch.nn.modules.activation.ReLU) or isinstance(module, torch.nn.modules.dropout.Dropout):
             return R
-        elif isinstance(module, torch.nn.modules.activation.LogSoftmax): ### just multiply r by layer input
+        elif isinstance(module, torch.nn.modules.activation.LogSoftmax):
+            # Non-standard: multiplies relevance by layer input. VGG16 does not use
+            # LogSoftmax, so this branch is unreachable in the current pipeline.
             return module.input * R
-            #return R # debug, remove
         elif isinstance(module, torch.nn.modules.pooling.AvgPool2d) or isinstance(module,
                                                                                   torch.nn.modules.pooling.MaxPool2d):
             return Pooling(module, R, lrp_var, param)
@@ -58,7 +60,7 @@ def Linear(module, R, lrp_var=None, param=None):
         X = module.input + SMALL_NUMBER
 
         ZA = torch.nn.functional.linear(X, VP) + SMALL_NUMBER
-        ZB = torch.nn.functional.linear(X, VN) + SMALL_NUMBER
+        ZB = torch.nn.functional.linear(X, VN) - SMALL_NUMBER  # VN <= 0, so ZB <= 0; subtract to keep denominator negative
 
         SA = alpha * R / ZA
         SB = beta * R / ZB
@@ -158,7 +160,7 @@ def Convolution(module, R, lrp_var=None, param=None):
         ZA = torch.nn.functional.conv2d(X, VP, stride=module.stride, padding=module.padding,
                                        dilation=module.dilation, groups=module.groups) + SMALL_NUMBER
         ZB = torch.nn.functional.conv2d(X, VN, stride=module.stride, padding=module.padding,
-                                        dilation=module.dilation, groups=module.groups) + SMALL_NUMBER
+                                        dilation=module.dilation, groups=module.groups) - SMALL_NUMBER  # VN <= 0, so ZB <= 0; subtract to keep denominator negative
 
         SA = alpha * R / ZA
         SB = beta * R / ZB
@@ -231,10 +233,10 @@ def Convolution(module, R, lrp_var=None, param=None):
         Z = torch.nn.functional.conv2d(X, V_gamma, bias=None, stride=module.stride, 
                                        padding=module.padding, dilation=module.dilation,
                                        groups=module.groups) 
-        #debug 
-        print("Z stats:", Z.abs().min(), Z.max(), Z.mean())
-        print("X stats:", X.abs().min(), X.max(), X.mean())
-        print("weight stats:", module.weight.abs().min(), module.weight.max(), module.weight.norm())
+        if LRP_DEBUG:
+            print("Z stats:", Z.abs().min(), Z.max(), Z.mean())
+            print("X stats:", X.abs().min(), X.max(), X.mean())
+            print("weight stats:", module.weight.abs().min(), module.weight.max(), module.weight.norm())
         
 
         S = R / (Z + SMALL_NUMBER)

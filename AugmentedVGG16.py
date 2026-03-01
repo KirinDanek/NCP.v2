@@ -66,8 +66,14 @@ def ablate_subspace_matrix(U: torch.Tensor, subspace_dims: list, irrelevant_subs
     for k_prime in irrelevant_subspaces:
         start_dim = sum(subspace_dims[:k_prime])
         block_size = subspace_dims[k_prime]
-        U_ab[:, start_dim : start_dim + block_size] *= 0.0001 #### 0.00
-        U_ab_transpose[start_dim : start_dim + block_size, :] *= 0.0001 #### 0.00
+        # Scale by 1e-4, NOT 0. Reasons:
+        #   (1) LRP propagates through encode/decode using weights as denominators
+        #       (Z = W*X + eps). Exact zeros make Z~0, causing R/Z to diverge (inf/nan).
+        #   (2) Exact zeros produce zero gradients, breaking gradient-based methods entirely.
+        # 1e-4 suppresses the concept subspace to near-zero while keeping LRP denominators
+        # finite and gradients non-degenerate.
+        U_ab[:, start_dim : start_dim + block_size] *= 0.0001
+        U_ab_transpose[start_dim : start_dim + block_size, :] *= 0.0001
 
     return U_ab, U_ab_transpose
 

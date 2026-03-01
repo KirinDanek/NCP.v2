@@ -128,6 +128,23 @@ class XYOnly(torch.utils.data.Dataset):
         return item[0], item[1]
 
 
+class XYGOnly(torch.utils.data.Dataset):
+    """Wrap a dataset that returns (x, y, g, ...) and expose only (x, y, g).
+
+    Used for eval loaders so that callers can slice metrics by gender without
+    exposing gender to the training/ranking pipeline.
+    """
+    def __init__(self, base):
+        self.base = base
+
+    def __len__(self):
+        return len(self.base)
+
+    def __getitem__(self, idx):
+        item = self.base[idx]
+        return item[0], item[1], item[2]
+
+
 def get_mnist(datapath='../data/mnist/', download=True):
     '''
     The MNIST dataset in PyTorch does not have a development set, and has its own format.
@@ -265,8 +282,8 @@ def get_carton_imagenet(transform=None, root_dir=None):
 
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-    transform = transforms.Compose([#transforms.Resize(256),
-                                        #transforms.CenterCrop(224),
+    transform = transforms.Compose([transforms.Resize(256),
+                                        transforms.CenterCrop(224),
                                         transforms.ToTensor(),
                                         normalize])
 
@@ -274,13 +291,14 @@ def get_carton_imagenet(transform=None, root_dir=None):
 
     print(dataset.class_to_idx) #  should show: {'non_target': 0, 'target': 1}
     # 80/20 split
-    train_size = int(0.1 * len(dataset)) ## remember to set this back to 0.8
+    train_size = int(0.8 * len(dataset))
     test_size = len(dataset) - train_size
     train, test = random_split(dataset, [train_size, test_size], generator=torch.Generator().manual_seed(42))
     
     return train, test
 
 import hashlib
+import random as _random
 from pathlib import Path
 from torchvision import transforms
 import torch
@@ -290,6 +308,13 @@ def _hash01(s: str) -> float:
     h = hashlib.sha1(s.encode("utf-8")).hexdigest()
     return int(h[:15], 16) / float(16**15)
 
+
+def _is_male_with_attr(fn: str, idx_obj, attr_name: str) -> bool:
+    """Return True if this filename's subject is Male AND has attr_name == +1."""
+    attrs = idx_obj.attrs_for(fn)
+    return attrs.get('Male', -1) > 0 and attrs.get(attr_name, -1) > 0
+
+
 def get_celeba_attribute_splits_for_pruning(
     attr_name="Wearing_Lipstick",
     celeba_root="/n/fs/ncp/NCP.v2/data/images/celeba",
@@ -298,16 +323,27 @@ def get_celeba_attribute_splits_for_pruning(
     prune_val_frac_of_remaining=0.30, # used as "test" during pruning
     transform=None,
     require_exists=True,
-    gender_as01=False,
+    min_male_with_attr=0,
 ):
     """
     Returns:
-      ft_train_xy, prune_val_xy
-
-    Where BOTH are drawn ONLY from the OFFICIAL CelebA TRAIN split.
+      ft_train  — XYOnly-wrapped CelebAAttributeDataset; yields (x, y).
+                  Used for training and LRP ranking. Drawn from official TRAIN.
+      prune_val — XYGOnly-wrapped CelebAAttributeDataset; yields (x, y, g)
+                  where g=1 Male / g=0 Female. Used for per-subgroup eval.
+                  Drawn from official TRAIN (prune_val_f), optionally
+                  supplemented with male+attr samples from downstream_f.
 
     Also deterministically defines a withheld downstream_test split
     (not returned / not used in pruning), reproducible via seed + fracs.
+
+    Args:
+      min_male_with_attr: If > 0 and the prune_val split has fewer than this
+        many Male+attr_name images, supplement from downstream_f (Male+attr
+        only) until the target is met or exhausted. These supplemental samples
+        are added to the eval set only — NOT to ft_train.
+        Typical value for Wearing_Lipstick: 200.
+        Default 0 = disabled.
     """
     from celeba import CelebAIndex, CelebAAttributeDataset
 
@@ -343,16 +379,52 @@ def get_celeba_attribute_splits_for_pruning(
         split="train",
         target_attr=attr_name,
         transform=transform,
-        gender_as01=gender_as01,
+        gender_as01=False,   # gender stripped by XYOnly; encoding irrelevant
         filenames=ft_train_f,
     )
-    prune_val = CelebAAttributeDataset(
+
+    # Build eval filename list, supplementing male+attr from downstream_f if needed.
+    # supplement_fnames records only the added filenames (empty if no supplementation).
+    # Caller should persist this list so the exact eval set is reproducible.
+    eval_fnames = list(prune_val_f)
+    supplement_fnames: list = []
+    if min_male_with_attr > 0:
+        in_prune_val = [fn for fn in prune_val_f
+                        if _is_male_with_attr(fn, idx, attr_name)]
+        shortage = max(0, min_male_with_attr - len(in_prune_val))
+        if shortage > 0:
+            # Candidates: Male+attr samples from the withheld downstream pool.
+            # downstream_f and prune_val_f are disjoint by construction
+            # (both drawn from the same deterministic _hash01 partition).
+            # Sort for determinism, then shuffle with a distinct seed.
+            candidates = sorted(fn for fn in downstream_f
+                                 if _is_male_with_attr(fn, idx, attr_name))
+            rng = _random.Random(seed + 2)
+            rng.shuffle(candidates)
+            supplement_fnames = candidates[:shortage]
+            eval_fnames = list(prune_val_f) + supplement_fnames
+            actually_added = len(supplement_fnames)
+            still_short = shortage - actually_added
+            print(
+                f"[CelebA eval] Supplemented {actually_added} Male+{attr_name} "
+                f"samples from downstream_test "
+                f"(prune_val had {len(in_prune_val)}, target {min_male_with_attr}, "
+                f"available in downstream_f {len(candidates)})"
+            )
+            if still_short > 0:
+                print(
+                    f"[CelebA eval] WARNING: downstream_f exhausted; "
+                    f"still {still_short} short of min_male_with_attr={min_male_with_attr}. "
+                    f"Actual Male+{attr_name} in eval: {len(in_prune_val) + actually_added}"
+                )
+
+    prune_val_with_gender = CelebAAttributeDataset(
         idx=idx,
         split="train",
         target_attr=attr_name,
         transform=transform,
-        gender_as01=gender_as01,
-        filenames=prune_val_f,
+        gender_as01=True,   # g in {0,1}: 0=Female, 1=Male
+        filenames=eval_fnames,
     )
 
     # Important: do NOT return downstream_test here (by design).
@@ -361,12 +433,17 @@ def get_celeba_attribute_splits_for_pruning(
         f"[CelebA pruning splits from official TRAIN] "
         f"train_total={len(train_fnames)} | "
         f"downstream_test(withheld)={len(downstream_f)} | "
-        f"ft_train={len(ft_train)} | prune_val={len(prune_val)} | "
-        f"seed={seed} | fracs: downstream={downstream_test_frac}, prune_val_of_remaining={prune_val_frac_of_remaining}"
+        f"ft_train={len(ft_train)} | "
+        f"prune_val={len(prune_val_with_gender)} "
+        f"(base={len(prune_val_f)}, supplement={len(supplement_fnames)}) | "
+        f"seed={seed} | fracs: downstream={downstream_test_frac}, "
+        f"prune_val_of_remaining={prune_val_frac_of_remaining}"
     )
 
-    # Pruning pipeline expects (x,y); drop g,fname
+    # ft_train: (x, y) for training + ranking
+    # prune_val: (x, y, g) for per-subgroup eval (distribution may differ from natural
+    #            prevalence if supplementation was applied)
     ft_train = XYOnly(ft_train)
-    prune_val = XYOnly(prune_val)
-    return ft_train, prune_val
+    prune_val = XYGOnly(prune_val_with_gender)
+    return ft_train, prune_val, supplement_fnames
 

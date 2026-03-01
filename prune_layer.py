@@ -37,12 +37,11 @@ Assumptions / risks
 
 Used by
 -------
-- prune_aug_vgg.py / prune_van_vgg.py during iterative pruning loops.
+- prune_vgg.py during iterative pruning loops.
 """
 
 
 import torch
-from torch.nn.utils import prune as torch_prune
 import torch.nn as nn
 import numpy as np
 
@@ -74,9 +73,17 @@ def prune_conv_layer_sequential(model, layer_index, filter_index, cuda_flag=Fals
     2. layer_index: 자르고자 하는 layer index
     3. filter_index: 자르고자 하는 layer의 filter index
     '''
-    # _, conv = model.features._modules.items()[layer_index]
-    conv_seq, _ = get_conv_seq_and_name(model)
-    _, conv = list(conv_seq._modules.items())[layer_index]  # 해당 layer를 우선 끄집어 온다.
+    conv_seq, seq_name = get_conv_seq_and_name(model)
+    if seq_name == "augmented" and hasattr(model, "encode"):
+        encode_idx = len(model.before)
+        decode_idx = len(model.before) + 1
+        if layer_index in (encode_idx, decode_idx):
+            raise ValueError(
+                f"layer_index={layer_index} corresponds to model.encode (idx={encode_idx}) "
+                f"or model.decode (idx={decode_idx}). These frozen concept-projection layers "
+                f"must not be pruned. Check disallowed_layers in FilterPruner."
+            )
+    _, conv = list(conv_seq._modules.items())[layer_index]
     next_conv = None
     offset = 1
 
