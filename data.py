@@ -319,8 +319,7 @@ def get_celeba_attribute_splits_for_pruning(
     attr_name="Wearing_Lipstick",
     celeba_root="/n/fs/ncp/NCP.v2/data/images/celeba",
     seed=42,
-    downstream_test_frac=0.50,        # withheld for later downstream eval
-    prune_val_frac_of_remaining=0.30, # used as "test" during pruning
+    downstream_test_frac=0.90,        # withheld for later downstream eval (from TRAIN)
     transform=None,
     require_exists=True,
     min_male_with_attr=0,
@@ -328,20 +327,23 @@ def get_celeba_attribute_splits_for_pruning(
     """
     Returns:
       ft_train  — XYOnly-wrapped CelebAAttributeDataset; yields (x, y).
-                  Used for training and LRP ranking. Drawn from official TRAIN.
+                  Used for training and LRP ranking. Drawn from official TRAIN
+                  minus the withheld downstream_test portion.
       prune_val — XYGOnly-wrapped CelebAAttributeDataset; yields (x, y, g)
                   where g=1 Male / g=0 Female. Used for per-subgroup eval.
-                  Drawn from official TRAIN (prune_val_f), optionally
-                  supplemented with male+attr samples from downstream_f.
+                  Drawn from official VAL, optionally supplemented with
+                  Male+attr samples from official TEST if min_male_with_attr
+                  is not met in VAL.
 
     Also deterministically defines a withheld downstream_test split
-    (not returned / not used in pruning), reproducible via seed + fracs.
+    (not returned / not used in pruning), drawn from official TRAIN and
+    reproducible via seed + downstream_test_frac.
 
     Args:
-      min_male_with_attr: If > 0 and the prune_val split has fewer than this
-        many Male+attr_name images, supplement from downstream_f (Male+attr
-        only) until the target is met or exhausted. These supplemental samples
-        are added to the eval set only — NOT to ft_train.
+      min_male_with_attr: If > 0 and the official VAL split has fewer than
+        this many Male+attr_name images, supplement from official TEST (Male+attr
+        only) until the target is met or exhausted. Supplemental samples are
+        added to prune_val only — NOT to ft_train.
         Typical value for Wearing_Lipstick: 200.
         Default 0 = disabled.
     """
@@ -361,18 +363,13 @@ def get_celeba_attribute_splits_for_pruning(
 
     idx = CelebAIndex(str(celeba_root))
 
-    # Universe = official TRAIN filenames only
+    # Partition official TRAIN into downstream_test (withheld) and ft_train.
     train_fnames = idx.filenames(split="train", require_exists=require_exists)
 
-    downstream_f, remaining_f = [], []
+    downstream_f, ft_train_f = [], []
     for fn in train_fnames:
         r = _hash01(f"{seed}:{fn}")
-        (downstream_f if r < downstream_test_frac else remaining_f).append(fn)
-
-    prune_val_f, ft_train_f = [], []
-    for fn in remaining_f:
-        r = _hash01(f"{seed+1}:{fn}")
-        (prune_val_f if r < prune_val_frac_of_remaining else ft_train_f).append(fn)
+        (downstream_f if r < downstream_test_frac else ft_train_f).append(fn)
 
     ft_train = CelebAAttributeDataset(
         idx=idx,
@@ -383,44 +380,45 @@ def get_celeba_attribute_splits_for_pruning(
         filenames=ft_train_f,
     )
 
-    # Build eval filename list, supplementing male+attr from downstream_f if needed.
+    # prune_val base: all of official VAL.
+    val_fnames = idx.filenames(split="val", require_exists=require_exists)
+
+    # Build eval filename list, supplementing Male+attr from official TEST if needed.
     # supplement_fnames records only the added filenames (empty if no supplementation).
     # Caller should persist this list so the exact eval set is reproducible.
-    eval_fnames = list(prune_val_f)
+    eval_fnames = list(val_fnames)
     supplement_fnames: list = []
     if min_male_with_attr > 0:
-        in_prune_val = [fn for fn in prune_val_f
-                        if _is_male_with_attr(fn, idx, attr_name)]
-        shortage = max(0, min_male_with_attr - len(in_prune_val))
+        in_val = [fn for fn in val_fnames if _is_male_with_attr(fn, idx, attr_name)]
+        shortage = max(0, min_male_with_attr - len(in_val))
         if shortage > 0:
-            # Candidates: Male+attr samples from the withheld downstream pool.
-            # downstream_f and prune_val_f are disjoint by construction
-            # (both drawn from the same deterministic _hash01 partition).
-            # Sort for determinism, then shuffle with a distinct seed.
-            candidates = sorted(fn for fn in downstream_f
-                                 if _is_male_with_attr(fn, idx, attr_name))
+            # Candidates: Male+attr samples from official TEST.
+            # Sort for determinism, then shuffle with a seeded RNG.
+            test_fnames = idx.filenames(split="test", require_exists=require_exists)
+            candidates = sorted(fn for fn in test_fnames
+                                if _is_male_with_attr(fn, idx, attr_name))
             rng = _random.Random(seed + 2)
             rng.shuffle(candidates)
             supplement_fnames = candidates[:shortage]
-            eval_fnames = list(prune_val_f) + supplement_fnames
+            eval_fnames = list(val_fnames) + supplement_fnames
             actually_added = len(supplement_fnames)
             still_short = shortage - actually_added
             print(
                 f"[CelebA eval] Supplemented {actually_added} Male+{attr_name} "
-                f"samples from downstream_test "
-                f"(prune_val had {len(in_prune_val)}, target {min_male_with_attr}, "
-                f"available in downstream_f {len(candidates)})"
+                f"samples from official TEST "
+                f"(VAL had {len(in_val)}, target {min_male_with_attr}, "
+                f"available in TEST {len(candidates)})"
             )
             if still_short > 0:
                 print(
-                    f"[CelebA eval] WARNING: downstream_f exhausted; "
+                    f"[CelebA eval] WARNING: TEST exhausted; "
                     f"still {still_short} short of min_male_with_attr={min_male_with_attr}. "
-                    f"Actual Male+{attr_name} in eval: {len(in_prune_val) + actually_added}"
+                    f"Actual Male+{attr_name} in eval: {len(in_val) + actually_added}"
                 )
 
     prune_val_with_gender = CelebAAttributeDataset(
         idx=idx,
-        split="train",
+        split="val",
         target_attr=attr_name,
         transform=transform,
         gender_as01=True,   # g in {0,1}: 0=Female, 1=Male
@@ -430,14 +428,13 @@ def get_celeba_attribute_splits_for_pruning(
     # Important: do NOT return downstream_test here (by design).
     # But log its size so you can sanity-check and recreate later.
     print(
-        f"[CelebA pruning splits from official TRAIN] "
+        f"[CelebA pruning splits] "
         f"train_total={len(train_fnames)} | "
         f"downstream_test(withheld)={len(downstream_f)} | "
-        f"ft_train={len(ft_train)} | "
+        f"ft_train={len(ft_train)} (official TRAIN minus downstream_test) | "
         f"prune_val={len(prune_val_with_gender)} "
-        f"(base={len(prune_val_f)}, supplement={len(supplement_fnames)}) | "
-        f"seed={seed} | fracs: downstream={downstream_test_frac}, "
-        f"prune_val_of_remaining={prune_val_frac_of_remaining}"
+        f"(base={len(val_fnames)} from official VAL, supplement={len(supplement_fnames)} from official TEST) | "
+        f"seed={seed} | downstream_frac={downstream_test_frac}"
     )
 
     # ft_train: (x, y) for training + ranking

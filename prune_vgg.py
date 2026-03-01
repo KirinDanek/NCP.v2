@@ -873,7 +873,7 @@ class PruningFineTuner:
             else:
                 optimizer = None
             try:
-                self.train(optimizer, epoches=10)
+                self.train(optimizer, epoches=2)
             finally:
                 if fine_tune_without_augmented_layers and hasattr(self.model, 'augmented'):
                     self.model.augmented = was_augmented
@@ -890,4 +890,4 @@ class PruningFineTuner:
         for param in self.model.parameters():
             param.requires_grad = True
 
-        self.train(optimizer, epoches=15)
+        self.train(optimizer, epoches=5)

@@ -169,7 +169,7 @@ def get_test_args():
     parser.add_argument('--total_pr', type=float, default=0.80)     # prune % total
     parser.add_argument('--rank_n', type=int, default=10000,
                     help='Number of training samples to use for ranking filters per pruning iteration')
-    parser.add_argument('--min_male_with_attr', type=int, default=0,
+    parser.add_argument('--min_male_with_attr', type=int, default=200,
                         help='Min Male+attr samples in eval set; supplement from downstream_test '
                              'if needed. 0=disabled. Typical value for Wearing_Lipstick: 200.')
 
@@ -186,12 +186,12 @@ def get_test_args():
                         action='store_false')
     parser.add_argument('--fine_tune_without_augmented_layers', action='store_true', default=False)
     parser.add_argument('--subspace_dims', type=int, nargs='+', default=[128, 128, 128, 128])
-    parser.add_argument('--irrelevant_subspaces', type=int, nargs='+', default=[3],
+    parser.add_argument('--irrelevant_subspaces', type=int, nargs='+', default=[],
                         help='Indices of concept subspaces to ablate (0-indexed)')
     parser.add_argument('--u_filepath', type=str,
-                        default='/n/fs/ncp/NCP.v2/data/projection_matrices/U_carton_tensor.pt')
+                        default='/n/fs/ncp/NCP.v2/data/projection_matrices/')
     parser.add_argument('--out_dir', type=str,
-                        default='/n/fs/ncp/NCP.v2/results/pruned-models/80-carton-dugong-orig-wm-abl/')
+                        default='/n/fs/ncp/NCP.v2/results/')
 
     args = parser.parse_args()
     return args
