@@ -564,7 +564,7 @@ class PruningFineTuner:
         self.subgroup_stats_tot: list = []
 
     def setup_dataloaders(self):
-        kwargs = {'num_workers': 4, 'pin_memory': True} if self.args.cuda else {}
+        kwargs = {'num_workers': 3, 'pin_memory': True} if self.args.cuda else {}
 
         data_type = self.args.data_type.lower()
         if data_type == 'celeba_lipstick':
