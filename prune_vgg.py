@@ -48,6 +48,7 @@ import data as dataset
 
 from operator import itemgetter
 from heapq import nsmallest
+from sklearn.metrics import average_precision_score as _ap_score
 
 
 # ---------------------------------------------------------------------------
@@ -564,7 +565,19 @@ class PruningFineTuner:
         self.subgroup_stats_tot: list = []
 
     def setup_dataloaders(self):
-        kwargs = {'num_workers': 3, 'pin_memory': True} if self.args.cuda else {}
+        # Use spawn context to avoid CUDA+fork deadlock.
+        # Default fork context inherits the parent's CUDA runtime when workers are created;
+        # spawned workers start fresh Python interpreters with no CUDA state, so they can
+        # safely initialize their own CUDA contexts. This allows num_workers>0 (prefetching)
+        # without deadlocking even after model.cuda() has been called in the parent.
+        if self.args.cuda:
+            kwargs = {
+                'num_workers': 3,
+                'pin_memory': True,
+                'multiprocessing_context': 'spawn',
+            }
+        else:
+            kwargs = {}
 
         data_type = self.args.data_type.lower()
         if data_type == 'celeba_lipstick':
@@ -605,6 +618,7 @@ class PruningFineTuner:
           checkpoints in prune() so that overall and subgroup stats share one pass.
         """
         self.model.eval()
+        print("[DEBUG test()] entered test()", flush=True)
         test_loss = 0
         correct = 0
         tp, fp, fn = {}, {}, {}
@@ -613,8 +627,16 @@ class PruningFineTuner:
         _do_sg = compute_subgroup and self.args.data_type.lower() in ('celeba_lipstick',)
         sg_correct, sg_total = {}, {}
         sg_tp_g, sg_fp_g, sg_fn_g = {}, {}, {}
+        _ap_scores, _ap_labels, _ap_genders = [], [], []  # for per-gender AP
 
-        for batch in self.test_loader:
+        print(f"[DEBUG test()] creating DataLoader iterator (num_workers={self.test_loader.num_workers}, mp_context={self.test_loader.multiprocessing_context})", flush=True)
+        _test_iter = iter(self.test_loader)
+        print("[DEBUG test()] DataLoader iterator created, requesting first batch", flush=True)
+        _first_batch = next(_test_iter, None)
+        print(f"[DEBUG test()] first batch received: {None if _first_batch is None else [t.shape for t in _first_batch]}", flush=True)
+
+        import itertools as _itertools
+        for batch in _itertools.chain([_first_batch] if _first_batch is not None else [], _test_iter):
             data, target = batch[0], batch[1]
             gender = batch[2] if _do_sg and len(batch) > 2 else None
             if self.args.cuda:
@@ -640,6 +662,9 @@ class PruningFineTuner:
             # Per-subgroup accumulation (same pass, no extra I/O)
             if gender is not None:
                 gender_cpu = gender.view(-1).cpu()
+                _ap_scores.append(output[:, 1].detach().cpu())
+                _ap_labels.append(target_flat)
+                _ap_genders.append(gender_cpu)
                 for p, y, g in zip(pred_flat.tolist(), target_flat.tolist(),
                                    gender_cpu.tolist()):
                     y, g = int(y), int(g)
@@ -686,6 +711,17 @@ class PruningFineTuner:
             for (g, y), tot in sg_total.items():
                 stats[f'acc_g{g}y{y}'] = sg_correct.get((g, y), 0) / tot if tot > 0 else _nan
                 stats[f'n_g{g}y{y}']   = tot
+            if _ap_scores:
+                _sc = torch.cat(_ap_scores).numpy()
+                _lb = torch.cat(_ap_labels).numpy()
+                _gn = torch.cat(_ap_genders).numpy()
+                stats['ap_overall'] = float(_ap_score(_lb, _sc))
+                for _g in all_genders:
+                    _mask = (_gn == _g)
+                    if _mask.sum() > 0 and _lb[_mask].sum() > 0:
+                        stats[f'ap_g{_g}'] = float(_ap_score(_lb[_mask], _sc[_mask]))
+                    else:
+                        stats[f'ap_g{_g}'] = _nan
             LABEL = {(0, 0): "F-no-makeup", (0, 1): "F-makeup",
                      (1, 0): "M-no-makeup", (1, 1): "M-makeup"}
             print(f"  Subgroup eval (iter {self.niter}):")
@@ -695,9 +731,13 @@ class PruningFineTuner:
                       f"acc={'nan' if acc != acc else f'{acc:.4f}'}")
             for g in all_genders:
                 p = stats.get(f'precision_g{g}', _nan); r = stats.get(f'recall_g{g}', _nan)
+                ap = stats.get(f'ap_g{g}', _nan)
                 print(f"    {'Male' if g else 'Female'}: "
                       f"prec={'nan' if p != p else f'{p:.4f}'}  "
-                      f"rec={'nan' if r != r else f'{r:.4f}'}")
+                      f"rec={'nan' if r != r else f'{r:.4f}'}  "
+                      f"AP={'nan' if ap != ap else f'{ap:.4f}'}")
+            if 'ap_overall' in stats:
+                print(f"    Overall AP: {stats['ap_overall']:.4f}")
             self.subgroup_stats_tot.append(stats)
 
         self.model.train()
@@ -793,7 +833,8 @@ class PruningFineTuner:
         return self.pruner.get_pruning_plan(num_filters_to_prune)
 
     def prune(self, fine_tune_conv_layers: bool = True,
-              fine_tune_without_augmented_layers: bool = False):
+              fine_tune_without_augmented_layers: bool = False,
+              final_finetune_epochs: int = 5):
         """
         Full iterative prune-and-fine-tune loop.
 
@@ -832,8 +873,15 @@ class PruningFineTuner:
               f"filters: {iterations}")
 
         # Baseline eval before any pruning (niter=0)
-        print("Baseline eval (before pruning):")
+        # Disable augmented path so stats reflect the prunable conv layers only,
+        # consistent with the final eval (where encode/decode are already deleted).
+        print("Baseline eval (before pruning):", flush=True)
+        _was_augmented = getattr(self.model, 'augmented', False)
+        if _was_augmented:
+            self.model.augmented = False
         self.test(compute_subgroup=True)
+        if _was_augmented:
+            self.model.augmented = True
 
         for kk in range(iterations):
             print("Ranking filters.. {}".format(kk))
@@ -874,9 +922,14 @@ class PruningFineTuner:
             finally:
                 if fine_tune_without_augmented_layers and hasattr(self.model, 'augmented'):
                     self.model.augmented = was_augmented
-            # Single eval pass at end of each (prune + fine-tune) iteration:
-            # captures overall stats, per-subgroup stats, and train_acc together
+            # Single eval pass at end of each (prune + fine-tune) iteration.
+            # Disable augmented path so stats reflect pruned conv layers only.
+            _was_augmented = getattr(self.model, 'augmented', False)
+            if _was_augmented:
+                self.model.augmented = False
             self.test(compute_subgroup=True)
+            if _was_augmented:
+                self.model.augmented = True
 
         print("Finished. Removing augmented layers (if any) and doing final fine-tune.")
         self.niter += 1
@@ -891,8 +944,9 @@ class PruningFineTuner:
 
         # Create a fresh optimizer: model structure may have changed (encode/decode deleted)
         # and any previous optimizer holds stale parameter references.
-        optimizer = optim.SGD(
-            self.model.parameters(),
-            lr=self.args.lr, momentum=self.args.momentum)
-        self.train(optimizer, epoches=5)
+        if final_finetune_epochs > 0:
+            optimizer = optim.SGD(
+                self.model.parameters(),
+                lr=self.args.lr, momentum=self.args.momentum)
+            self.train(optimizer, epoches=final_finetune_epochs)
         self.test(compute_subgroup=True)

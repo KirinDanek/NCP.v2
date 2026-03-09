@@ -186,7 +186,9 @@ def get_test_args():
     parser.add_argument('--fine_tune_conv_layers', action='store_true', default=True)
     parser.add_argument('--no_fine_tune_conv_layers', dest='fine_tune_conv_layers',
                         action='store_false')
-    parser.add_argument('--fine_tune_without_augmented_layers', action='store_true', default=False)
+    parser.add_argument('--fine_tune_without_augmented_layers', action='store_true', default=True)
+    parser.add_argument('--fine_tune_with_augmented_layers', dest='fine_tune_without_augmented_layers',
+                        action='store_false')
     parser.add_argument('--subspace_dims', type=int, nargs='+', default=[128, 128, 128, 128])
     parser.add_argument('--irrelevant_subspaces', type=int, nargs='+', default=[],
                         help='Indices of concept subspaces to ablate (0-indexed)')
@@ -194,6 +196,13 @@ def get_test_args():
                         default='/n/fs/ncp/NCP.v2/data/projection_matrices/')
     parser.add_argument('--out_dir', type=str,
                         default='/n/fs/ncp/NCP.v2/results/')
+    parser.add_argument('--final_finetune_epochs', type=int, default=5,
+                        help='Epochs for final recovery fine-tuning after all pruning. '
+                             'Set to 0 to skip (on_before_final_finetune cleanup and '
+                             'final eval still run).')
+    parser.add_argument('--stats_only', action='store_true', default=False,
+                        help='Skip saving model weights; save only training statistics. '
+                             'Saves significant storage when only metrics are needed.')
 
     args = parser.parse_args()
     return args
@@ -285,6 +294,11 @@ def test_pruning_pipeline():
     optimizer = torch.optim.Adam(model.classifier[6].parameters(), lr=args.lr)
 
     criterion = torch.nn.CrossEntropyLoss()
+    # Bypass augmented path during warmup: the classifier head should be trained on
+    # the raw conv features, not the ablated concept-space representation.
+    _warmup_was_augmented = getattr(model, 'augmented', False)
+    if _warmup_was_augmented:
+        model.augmented = False
     model.train()
     for epoch in range(1): #debug: reduced from 15
         running_loss = 0.0
@@ -303,10 +317,13 @@ def test_pruning_pipeline():
                 print(f"Epoch {epoch+1} | Batch {batch_idx} | Loss: {loss.item():.4f}")
         print(f"Epoch {epoch+1} complete. Avg Loss: {running_loss / len(tuner.train_loader):.4f}")
 
+    if _warmup_was_augmented:
+        model.augmented = True
 
     print("Pruning...")
     tuner.prune(fine_tune_conv_layers=args.fine_tune_conv_layers,
-                fine_tune_without_augmented_layers=args.fine_tune_without_augmented_layers)
+                fine_tune_without_augmented_layers=args.fine_tune_without_augmented_layers,
+                final_finetune_epochs=args.final_finetune_epochs)
 
     ### Save model weights and mid-pruning metrics
     # Note: if augmented, encode/decode are removed prior to final fine-tuning
@@ -323,10 +340,8 @@ def test_pruning_pipeline():
     else:
         out_path = os.path.join(args.out_dir, 'van.pth')
     os.makedirs(args.out_dir, exist_ok=True)
-    # Save model + pruner metadata
-    torch.save({
-        'model': tuner.model,
-        'state_dict': tuner.model.state_dict(),
+    # Save pruner metadata; model weights omitted when --stats_only to save storage
+    save_dict = {
         'pruned_structure': pruned_structure,
         'train_loss': tuner.train_loss_tot,
         'train_acc': tuner.train_acc_tot,
@@ -336,7 +351,11 @@ def test_pruning_pipeline():
         'test_precision_per_class': tuner.test_precision_tot,
         'test_recall_per_class': tuner.test_recall_tot,
         'subgroup_stats': tuner.subgroup_stats_tot,
-    }, out_path)
+    }
+    if not args.stats_only:
+        save_dict['model'] = tuner.model
+        save_dict['state_dict'] = tuner.model.state_dict()
+    torch.save(save_dict, out_path)
 
 
 if __name__ == "__main__":
