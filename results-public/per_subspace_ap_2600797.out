@@ -1,0 +1,403 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+I'm leaving my comments here: 
+Wearing lipstick: rank correlations ~0.97-1.0 --> lrp distributes
+same ranking signal to every subspace w/ different scaling. i.e., group means
+vary in magnitude but ordering of examples is the same, hence identical 
+AP everywhere. Maybe lipstick and gender is too confounded.
+ 
+Blond Hair: somewhat decorrelated: sub 4,3 = 0.643, sub 4,6 = 0.653, sub 4,0 = 0.684
+sub 6,12: highest gender signal
+sub 4: Low gender AP, AttrAP=0.901
+
+Summary: 
+wearing lipstick subspaces are useless
+blond hair subspaces are not great, but we could try:
+remove 6,12,10 from sx16. The most promising candidate to keep 
+based on raw stats is sub 4 (one of the 'eyes' subspaces),
+w/ lowest genderAP (0.763) and decorrelated from gender heavy subs
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+Job 2600797: per-subspace AP (lipstick + blond hair)
+NVIDIA L40
+Using device: cuda
+
+################################################################################
+# Attribute: Wearing_Lipstick
+################################################################################
+Loading prune_val split...
+[CelebA eval] Supplemented 47 Male+Wearing_Lipstick samples from official TEST (VAL had 32, target 200, available in TEST 47)
+[CelebA eval] WARNING: TEST exhausted; still 121 short of min_male_with_attr=200. Actual Male+Wearing_Lipstick in eval: 79
+[CelebA pruning splits] train_total=162770 | downstream_test(withheld)=146527 | ft_train=16243 (official TRAIN minus downstream_test) | prune_val=19914 (base=19867 from official VAL, supplement=47 from official TEST) | seed=42 | downstream_frac=0.9
+  prune_val size: 19914
+
+Running sx4...
+[U matrix] 3-D array (512, 4, 128) → reshaping to (512, 512)
+/n/fs/ncp/env1/lib/python3.8/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/n/fs/ncp/env1/lib/python3.8/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=VGG16_Weights.IMAGENET1K_V1`. You can also use `weights=VGG16_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+/n/fs/ncp/NCP.v2/run_PFT.py:108: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ckpt = torch.load(path, map_location='cpu')
+    batch 100/623
+    batch 200/623
+    batch 300/623
+    batch 400/623
+    batch 500/623
+    batch 600/623
+
+================================================================================
+  sx4  |  Wearing_Lipstick  |  4 subspaces
+  Female prevalence (base rate for gender AP): 0.573
+================================================================================
+  Sub      Type  Dims    AttrAP  AttrAP_F  AttrAP_M  GenderAP
+  ---  --------  ----  --------  --------  --------  --------
+    0     IRREL   128    0.9794    0.9809    0.4636    0.9945
+    1     IRREL   128    0.9797    0.9813    0.4625    0.9947
+    2     IRREL   128    0.9785    0.9800    0.4712    0.9947
+    3       REL   128    0.9798    0.9814    0.4672    0.9945
+
+  Group mean relevance per subspace:
+  Sub      Type      F+attr      F-attr      M+attr      M-attr
+  ---  --------  ----------  ----------  ----------  ----------
+    0     IRREL     +0.8720     -0.0819     -0.2169     -1.1924
+    1     IRREL     +0.7606     -0.1195     -0.2944     -1.6369
+    2     IRREL     +0.5417     -0.0793     -0.1831     -0.9684
+    3       REL     +0.4233     -0.0801     -0.1706     -0.9556
+
+  Spearman rank correlation between subspaces:
+             0      1      2      3
+    0           0.997  0.989  0.996
+    1    0.997         0.993  0.999
+    2    0.989  0.993         0.995
+    3    0.996  0.999  0.995       
+                                                             
+    Σ   ALL_REL          0.9798    0.9814    0.4672    0.9945
+    Σ   ALL_IRR          0.9797    0.9813    0.4652    0.9947
+
+Running sx8...
+[U matrix] 3-D array (512, 8, 64) → reshaping to (512, 512)
+/n/fs/ncp/env1/lib/python3.8/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/n/fs/ncp/env1/lib/python3.8/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=VGG16_Weights.IMAGENET1K_V1`. You can also use `weights=VGG16_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+/n/fs/ncp/NCP.v2/run_PFT.py:108: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ckpt = torch.load(path, map_location='cpu')
+    batch 100/623
+    batch 200/623
+    batch 300/623
+    batch 400/623
+    batch 500/623
+    batch 600/623
+
+================================================================================
+  sx8  |  Wearing_Lipstick  |  8 subspaces
+  Female prevalence (base rate for gender AP): 0.573
+================================================================================
+  Sub      Type  Dims    AttrAP  AttrAP_F  AttrAP_M  GenderAP
+  ---  --------  ----  --------  --------  --------  --------
+    0     IRREL    64    0.9786    0.9802    0.4589    0.9939
+    1     IRREL    64    0.9797    0.9812    0.4679    0.9948
+    2     IRREL    64    0.9796    0.9812    0.4627    0.9942
+    3       REL    64    0.9795    0.9810    0.4648    0.9950
+    4     IRREL    64    0.9777    0.9792    0.4648    0.9947
+    5     IRREL    64    0.9796    0.9811    0.4705    0.9945
+    6     IRREL    64    0.9792    0.9808    0.4674    0.9942
+    7     IRREL    64    0.9795    0.9810    0.4723    0.9944
+
+  Group mean relevance per subspace:
+  Sub      Type      F+attr      F-attr      M+attr      M-attr
+  ---  --------  ----------  ----------  ----------  ----------
+    0     IRREL     +0.6532     -0.0173     -0.0915     -0.5160
+    1     IRREL     +0.4231     -0.0823     -0.1856     -0.9822
+    2     IRREL     +0.3978     -0.0585     -0.1346     -0.7149
+    3       REL     +0.3579     -0.0641     -0.1589     -0.9245
+    4     IRREL     +0.3406     -0.0304     -0.0855     -0.4407
+    5     IRREL     +0.1646     -0.0428     -0.0827     -0.4488
+    6     IRREL     +0.1186     -0.0356     -0.0656     -0.4114
+    7     IRREL     +0.1420     -0.0297     -0.0604     -0.3148
+
+  Spearman rank correlation between subspaces:
+             0      1      2      3      4      5      6      7
+    0           0.991  0.995  0.989  0.979  0.991  0.992  0.988
+    1    0.991         0.993  0.997  0.994  0.997  0.995  0.996
+    2    0.995  0.993         0.992  0.986  0.994  0.993  0.993
+    3    0.989  0.997  0.992         0.994  0.996  0.996  0.996
+    4    0.979  0.994  0.986  0.994         0.992  0.987  0.993
+    5    0.991  0.997  0.994  0.996  0.992         0.996  0.997
+    6    0.992  0.995  0.993  0.996  0.987  0.996         0.994
+    7    0.988  0.996  0.993  0.996  0.993  0.997  0.994       
+                                                             
+    Σ   ALL_REL          0.9795    0.9810    0.4648    0.9950
+    Σ   ALL_IRR          0.9798    0.9813    0.4667    0.9946
+
+Running sx16...
+[U matrix] 3-D array (512, 16, 32) → reshaping to (512, 512)
+/n/fs/ncp/env1/lib/python3.8/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/n/fs/ncp/env1/lib/python3.8/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=VGG16_Weights.IMAGENET1K_V1`. You can also use `weights=VGG16_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+/n/fs/ncp/NCP.v2/run_PFT.py:108: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ckpt = torch.load(path, map_location='cpu')
+    batch 100/623
+    batch 200/623
+    batch 300/623
+    batch 400/623
+    batch 500/623
+    batch 600/623
+
+================================================================================
+  sx16  |  Wearing_Lipstick  |  16 subspaces
+  Female prevalence (base rate for gender AP): 0.573
+================================================================================
+  Sub      Type  Dims    AttrAP  AttrAP_F  AttrAP_M  GenderAP
+  ---  --------  ----  --------  --------  --------  --------
+    0     IRREL    32    0.9756    0.9772    0.4626    0.9930
+    1       REL    32    0.9788    0.9805    0.4461    0.9937
+    2       REL    32    0.9787    0.9804    0.4510    0.9933
+    3     IRREL    32    0.9796    0.9812    0.4654    0.9945
+    4     IRREL    32    0.9794    0.9810    0.4730    0.9944
+    5     IRREL    32    0.9793    0.9809    0.4611    0.9953
+    6     IRREL    32    0.9776    0.9792    0.4649    0.9946
+    7       REL    32    0.9795    0.9811    0.4640    0.9947
+    8     IRREL    32    0.9789    0.9804    0.4652    0.9940
+    9     IRREL    32    0.9762    0.9777    0.4641    0.9946
+   10     IRREL    32    0.9793    0.9809    0.4643    0.9948
+   11     IRREL    32    0.9791    0.9806    0.4728    0.9944
+   12     IRREL    32    0.9793    0.9808    0.4648    0.9943
+   13     IRREL    32    0.9791    0.9806    0.4696    0.9944
+   14     IRREL    32    0.9793    0.9808    0.4675    0.9938
+   15     IRREL    32    0.9794    0.9809    0.4710    0.9939
+
+  Group mean relevance per subspace:
+  Sub      Type      F+attr      F-attr      M+attr      M-attr
+  ---  --------  ----------  ----------  ----------  ----------
+    0     IRREL     +0.2671     -0.0022     -0.0258     -0.1688
+    1       REL     +0.3144     -0.0073     -0.0467     -0.2342
+    2       REL     +0.2307     -0.0190     -0.0519     -0.2752
+    3     IRREL     +0.1207     -0.0249     -0.0544     -0.2845
+    4     IRREL     +0.3439     -0.0473     -0.1114     -0.7838
+    5     IRREL     +0.1577     -0.0307     -0.0815     -0.3920
+    6     IRREL     +0.1651     -0.0184     -0.0460     -0.2284
+    7       REL     +0.1520     -0.0264     -0.0637     -0.3335
+    8     IRREL     +0.1354     -0.0300     -0.0647     -0.3322
+    9     IRREL     +0.1706     -0.0153     -0.0415     -0.2263
+   10     IRREL     +0.1218     -0.0270     -0.0644     -0.3135
+   11     IRREL     +0.1316     -0.0381     -0.0734     -0.3917
+   12     IRREL     +0.1012     -0.0223     -0.0450     -0.2304
+   13     IRREL     +0.0581     -0.0182     -0.0337     -0.1920
+   14     IRREL     +0.0627     -0.0129     -0.0250     -0.1269
+   15     IRREL     +0.0648     -0.0207     -0.0358     -0.2402
+
+  Spearman rank correlation between subspaces:
+             0      1      2      3      4      5      6      7      8      9     10     11     12     13     14     15
+    0           0.978  0.989  0.976  0.976  0.971  0.961  0.975  0.974  0.960  0.974  0.977  0.974  0.977  0.972  0.977
+    1    0.978         0.986  0.987  0.979  0.983  0.972  0.982  0.985  0.973  0.982  0.978  0.986  0.982  0.978  0.979
+    2    0.989  0.986         0.984  0.985  0.978  0.974  0.986  0.979  0.972  0.976  0.985  0.980  0.985  0.980  0.985
+    3    0.976  0.987  0.984         0.991  0.992  0.987  0.989  0.985  0.987  0.987  0.991  0.992  0.994  0.987  0.992
+    4    0.976  0.979  0.985  0.991         0.987  0.989  0.992  0.979  0.991  0.978  0.994  0.985  0.995  0.985  0.996
+    5    0.971  0.983  0.978  0.992  0.987         0.987  0.992  0.988  0.987  0.992  0.989  0.993  0.991  0.986  0.987
+    6    0.961  0.972  0.974  0.987  0.989  0.987         0.989  0.980  0.993  0.980  0.988  0.984  0.990  0.986  0.987
+    7    0.975  0.982  0.986  0.989  0.992  0.992  0.989         0.984  0.989  0.985  0.992  0.989  0.992  0.985  0.990
+    8    0.974  0.985  0.979  0.985  0.979  0.988  0.980  0.984         0.979  0.988  0.981  0.987  0.986  0.985  0.981
+    9    0.960  0.973  0.972  0.987  0.991  0.987  0.993  0.989  0.979         0.978  0.988  0.984  0.990  0.985  0.988
+   10    0.974  0.982  0.976  0.987  0.978  0.992  0.980  0.985  0.988  0.978         0.983  0.991  0.985  0.984  0.980
+   11    0.977  0.978  0.985  0.991  0.994  0.989  0.988  0.992  0.981  0.988  0.983         0.987  0.995  0.988  0.995
+   12    0.974  0.986  0.980  0.992  0.985  0.993  0.984  0.989  0.987  0.984  0.991  0.987         0.991  0.987  0.986
+   13    0.977  0.982  0.985  0.994  0.995  0.991  0.990  0.992  0.986  0.990  0.985  0.995  0.991         0.990  0.995
+   14    0.972  0.978  0.980  0.987  0.985  0.986  0.986  0.985  0.985  0.985  0.984  0.988  0.987  0.990         0.986
+   15    0.977  0.979  0.985  0.992  0.996  0.987  0.987  0.990  0.981  0.988  0.980  0.995  0.986  0.995  0.986       
+                                                             
+    Σ   ALL_REL          0.9794    0.9810    0.4557    0.9943
+    Σ   ALL_IRR          0.9796    0.9812    0.4707    0.9947
+
+################################################################################
+# Attribute: Blond_Hair
+################################################################################
+Loading prune_val split...
+[CelebA eval] Supplemented 18 Male+Blond_Hair samples from official TEST (VAL had 182, target 200, available in TEST 180)
+[CelebA pruning splits] train_total=162770 | downstream_test(withheld)=146527 | ft_train=16243 (official TRAIN minus downstream_test) | prune_val=19885 (base=19867 from official VAL, supplement=18 from official TEST) | seed=42 | downstream_frac=0.9
+  prune_val size: 19885
+
+Running sx4...
+[U matrix] 3-D array (512, 4, 128) → reshaping to (512, 512)
+/n/fs/ncp/env1/lib/python3.8/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/n/fs/ncp/env1/lib/python3.8/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=VGG16_Weights.IMAGENET1K_V1`. You can also use `weights=VGG16_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+/n/fs/ncp/NCP.v2/run_PFT.py:108: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ckpt = torch.load(path, map_location='cpu')
+    batch 100/622
+    batch 200/622
+    batch 300/622
+    batch 400/622
+    batch 500/622
+    batch 600/622
+
+================================================================================
+  sx4  |  Blond_Hair  |  4 subspaces
+  Female prevalence (base rate for gender AP): 0.574
+================================================================================
+  Sub      Type  Dims    AttrAP  AttrAP_F  AttrAP_M  GenderAP
+  ---  --------  ----  --------  --------  --------  --------
+    0     IRREL   128    0.9154    0.9300    0.5602    0.8311
+    1     IRREL   128    0.9146    0.9294    0.5440    0.8332
+    2     IRREL   128    0.9082    0.9235    0.5183    0.7988
+    3       REL   128    0.9128    0.9273    0.5543    0.8374
+
+  Group mean relevance per subspace:
+  Sub      Type      F+attr      F-attr      M+attr      M-attr
+  ---  --------  ----------  ----------  ----------  ----------
+    0     IRREL     +0.7555     -0.8055     +0.1120     -1.1585
+    1     IRREL     +0.1909     -0.1932     +0.0230     -0.2819
+    2     IRREL     +0.1624     -0.3356     +0.0042     -0.4271
+    3       REL     +0.1632     -0.2678     +0.0144     -0.3987
+
+  Spearman rank correlation between subspaces:
+             0      1      2      3
+    0           0.980  0.904  0.976
+    1    0.980         0.885  0.960
+    2    0.904  0.885         0.898
+    3    0.976  0.960  0.898       
+                                                             
+    Σ   ALL_REL          0.9128    0.9273    0.5543    0.8374
+    Σ   ALL_IRR          0.9166    0.9311    0.5565    0.8255
+
+Running sx8...
+[U matrix] 3-D array (512, 8, 64) → reshaping to (512, 512)
+/n/fs/ncp/env1/lib/python3.8/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/n/fs/ncp/env1/lib/python3.8/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=VGG16_Weights.IMAGENET1K_V1`. You can also use `weights=VGG16_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+/n/fs/ncp/NCP.v2/run_PFT.py:108: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ckpt = torch.load(path, map_location='cpu')
+    batch 100/622
+    batch 200/622
+    batch 300/622
+    batch 400/622
+    batch 500/622
+    batch 600/622
+
+================================================================================
+  sx8  |  Blond_Hair  |  8 subspaces
+  Female prevalence (base rate for gender AP): 0.574
+================================================================================
+  Sub      Type  Dims    AttrAP  AttrAP_F  AttrAP_M  GenderAP
+  ---  --------  ----  --------  --------  --------  --------
+    0     IRREL    64    0.9140    0.9287    0.5613    0.8326
+    1     IRREL    64    0.9075    0.9227    0.5359    0.8286
+    2     IRREL    64    0.9084    0.9233    0.5263    0.8157
+    3       REL    64    0.9116    0.9270    0.5398    0.8264
+    4     IRREL    64    0.9093    0.9246    0.5127    0.8190
+    5     IRREL    64    0.9095    0.9242    0.5531    0.8464
+    6     IRREL    64    0.9139    0.9291    0.5293    0.8023
+    7     IRREL    64    0.9131    0.9282    0.5339    0.7926
+
+  Group mean relevance per subspace:
+  Sub      Type      F+attr      F-attr      M+attr      M-attr
+  ---  --------  ----------  ----------  ----------  ----------
+    0     IRREL     +0.6255     -0.5717     +0.1053     -0.8418
+    1     IRREL     +0.1318     -0.0927     +0.0149     -0.1367
+    2     IRREL     +0.1138     -0.2067     +0.0042     -0.2842
+    3       REL     +0.0595     -0.0798     +0.0081     -0.1139
+    4     IRREL     +0.0872     -0.1743     +0.0018     -0.2396
+    5     IRREL     +0.0978     -0.1304     +0.0125     -0.2092
+    6     IRREL     +0.1215     -0.2319     +0.0058     -0.3008
+    7     IRREL     +0.0350     -0.1146     +0.0009     -0.1399
+
+  Spearman rank correlation between subspaces:
+             0      1      2      3      4      5      6      7
+    0           0.953  0.871  0.955  0.856  0.968  0.833  0.877
+    1    0.953         0.801  0.907  0.796  0.916  0.796  0.826
+    2    0.871  0.801         0.910  0.963  0.868  0.907  0.905
+    3    0.955  0.907  0.910         0.905  0.933  0.865  0.909
+    4    0.856  0.796  0.963  0.905         0.863  0.947  0.910
+    5    0.968  0.916  0.868  0.933  0.863         0.833  0.854
+    6    0.833  0.796  0.907  0.865  0.947  0.833         0.897
+    7    0.877  0.826  0.905  0.909  0.910  0.854  0.897       
+                                                             
+    Σ   ALL_REL          0.9116    0.9270    0.5398    0.8264
+    Σ   ALL_IRR          0.9163    0.9308    0.5584    0.8281
+
+Running sx16...
+[U matrix] 3-D array (512, 16, 32) → reshaping to (512, 512)
+/n/fs/ncp/env1/lib/python3.8/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/n/fs/ncp/env1/lib/python3.8/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=VGG16_Weights.IMAGENET1K_V1`. You can also use `weights=VGG16_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+/n/fs/ncp/NCP.v2/run_PFT.py:108: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ckpt = torch.load(path, map_location='cpu')
+    batch 100/622
+    batch 200/622
+    batch 300/622
+    batch 400/622
+    batch 500/622
+    batch 600/622
+
+================================================================================
+  sx16  |  Blond_Hair  |  16 subspaces
+  Female prevalence (base rate for gender AP): 0.574
+================================================================================
+  Sub      Type  Dims    AttrAP  AttrAP_F  AttrAP_M  GenderAP
+  ---  --------  ----  --------  --------  --------  --------
+    0     IRREL    32    0.9134    0.9281    0.5639    0.8383
+    1       REL    32    0.9070    0.9221    0.5357    0.8295
+    2       REL    32    0.8466    0.8635    0.4472    0.8035
+    3     IRREL    32    0.9097    0.9251    0.5545    0.8286
+    4     IRREL    32    0.9014    0.9169    0.5078    0.7634
+    5     IRREL    32    0.9082    0.9238    0.5080    0.8044
+    6     IRREL    32    0.9091    0.9242    0.5614    0.8551
+    7       REL    32    0.9097    0.9256    0.5379    0.8410
+    8     IRREL    32    0.9015    0.9167    0.5132    0.8233
+    9     IRREL    32    0.9132    0.9284    0.5306    0.8083
+   10     IRREL    32    0.9116    0.9261    0.5518    0.8442
+   11     IRREL    32    0.9131    0.9283    0.5183    0.8040
+   12     IRREL    32    0.9118    0.9263    0.5606    0.8553
+   13     IRREL    32    0.9128    0.9277    0.5446    0.7862
+   14     IRREL    32    0.8960    0.9113    0.5116    0.8014
+   15     IRREL    32    0.9092    0.9250    0.5368    0.8052
+
+  Group mean relevance per subspace:
+  Sub      Type      F+attr      F-attr      M+attr      M-attr
+  ---  --------  ----------  ----------  ----------  ----------
+    0     IRREL     +0.2813     -0.2410     +0.0485     -0.3691
+    1       REL     +0.0830     -0.0565     +0.0093     -0.0832
+    2       REL     +0.0092     -0.0559     -0.0024     -0.0735
+    3     IRREL     +0.2017     -0.1404     +0.0407     -0.2156
+    4     IRREL     +0.0816     -0.1037     +0.0050     -0.1144
+    5     IRREL     +0.0495     -0.0856     +0.0022     -0.1114
+    6     IRREL     +0.0705     -0.0572     +0.0135     -0.0994
+    7       REL     +0.0539     -0.0558     +0.0083     -0.0864
+    8     IRREL     +0.0375     -0.1017     -0.0007     -0.1437
+    9     IRREL     +0.1406     -0.2808     +0.0068     -0.3750
+   10     IRREL     +0.0355     -0.0695     +0.0022     -0.1084
+   11     IRREL     +0.0608     -0.1212     +0.0027     -0.1594
+   12     IRREL     +0.0235     -0.0528     +0.0008     -0.0970
+   13     IRREL     +0.0249     -0.0616     +0.0020     -0.0733
+   14     IRREL     +0.0137     -0.0552     -0.0006     -0.0709
+   15     IRREL     +0.1048     -0.0632     +0.0153     -0.0854
+
+  Spearman rank correlation between subspaces:
+             0      1      2      3      4      5      6      7      8      9     10     11     12     13     14     15
+    0           0.936  0.799  0.965  0.684  0.784  0.974  0.963  0.883  0.791  0.936  0.805  0.887  0.810  0.828  0.910
+    1    0.936         0.816  0.953  0.690  0.788  0.919  0.927  0.860  0.810  0.891  0.811  0.870  0.836  0.844  0.902
+    2    0.799  0.816         0.773  0.844  0.900  0.790  0.843  0.936  0.940  0.895  0.907  0.874  0.906  0.939  0.765
+    3    0.965  0.953  0.773         0.643  0.739  0.948  0.935  0.835  0.754  0.885  0.777  0.857  0.799  0.804  0.911
+    4    0.684  0.690  0.844  0.643         0.912  0.653  0.731  0.810  0.853  0.765  0.846  0.757  0.813  0.834  0.679
+    5    0.784  0.788  0.900  0.739  0.912         0.766  0.830  0.880  0.892  0.864  0.940  0.851  0.852  0.903  0.757
+    6    0.974  0.919  0.790  0.948  0.653  0.766         0.953  0.872  0.790  0.928  0.786  0.887  0.786  0.811  0.902
+    7    0.963  0.927  0.843  0.935  0.731  0.830  0.953         0.900  0.840  0.939  0.851  0.917  0.843  0.861  0.897
+    8    0.883  0.860  0.936  0.835  0.810  0.880  0.872  0.900         0.925  0.956  0.886  0.923  0.887  0.932  0.795
+    9    0.791  0.810  0.940  0.754  0.853  0.892  0.790  0.840  0.925         0.889  0.889  0.885  0.878  0.927  0.729
+   10    0.936  0.891  0.895  0.885  0.765  0.864  0.928  0.939  0.956  0.889         0.866  0.928  0.859  0.893  0.834
+   11    0.805  0.811  0.907  0.777  0.846  0.940  0.786  0.851  0.886  0.889  0.866         0.859  0.874  0.945  0.783
+   12    0.887  0.870  0.874  0.857  0.757  0.851  0.887  0.917  0.923  0.885  0.928  0.859         0.830  0.873  0.797
+   13    0.810  0.836  0.906  0.799  0.813  0.852  0.786  0.843  0.887  0.878  0.859  0.874  0.830         0.912  0.793
+   14    0.828  0.844  0.939  0.804  0.834  0.903  0.811  0.861  0.932  0.927  0.893  0.945  0.873  0.912         0.795
+   15    0.910  0.902  0.765  0.911  0.679  0.757  0.902  0.897  0.795  0.729  0.834  0.783  0.797  0.793  0.795       
+                                                             
+    Σ   ALL_REL          0.9139    0.9287    0.5360    0.8324
+    Σ   ALL_IRR          0.9163    0.9309    0.5588    0.8274
+
+Done.
