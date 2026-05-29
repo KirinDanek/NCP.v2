@@ -145,3 +145,6 @@ Implementation:
 - `run_PFT*.py`       — experiment entrypoints (paths, args, model init, saving)
 
 ---
+
+### Code Acknowledgements
+Includes code adapted and taken from https://github.com/facebookresearch/Whac-A-Mole , https://github.com/seulkiyeom/LRP_pruning , https://github.com/p16i/disentangling-explanations .
