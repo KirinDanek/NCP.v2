@@ -25,8 +25,9 @@ from torchvision import transforms
 from PIL import Image
 import torch.nn.functional as F
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, SCRIPT_DIR)
+_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+sys.path.insert(0, os.path.join(_root, 'src'))
+sys.path.insert(0, os.path.join(_root, 'experiments'))
 
 from AugmentedVGG16 import AugmentedVGG16
 from run_PFT import _load_checkpoint_state_dict, _remap_vgg16_features_to_augmented, _load_u_matrix

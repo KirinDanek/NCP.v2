@@ -53,8 +53,9 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import models, transforms
 from PIL import Image
 
-sys.path.insert(0, '/n/fs/ncp/NCP.v2')
-sys.path.insert(0, '/n/fs/ncp/watermark_imagenet')
+_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+sys.path.insert(0, os.path.join(_root, 'src'))
+sys.path.insert(0, os.path.join(_root, 'watermark'))
 
 from sklearn.metrics import average_precision_score
 from AugmentedVGG16 import ablate_subspace_matrix, AugmentedVGG16

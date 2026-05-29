@@ -34,6 +34,8 @@ from torch.utils.data import DataLoader, Subset
 from torch.autograd import Variable
 from pathlib import Path
 
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src'))
 from AugmentedVGG16 import ablate_subspace_matrix, AugmentedVGG16
 from prune_vgg import PruningFineTuner, VanillaVGGAdapter, AugmentedVGGAdapter
 from lrp import lrp

@@ -64,8 +64,9 @@ torch.cuda.empty_cache()
 print(torch.cuda.get_device_name(0)) ## debug
 from torchvision import models
 import torch.nn as nn
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src'))
 from AugmentedVGG16 import *
-import os
 
 
 # ---------------------------------------------------------------------------
