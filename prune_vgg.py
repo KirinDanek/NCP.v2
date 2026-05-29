@@ -43,7 +43,7 @@ from torch.autograd import Variable
 from torchvision import models
 
 from lrp import lrp
-from prune_layer import prune_conv_layer_sequential
+from prune_layer import prune_conv_layer_sequential, get_conv_seq_and_name
 import data as dataset
 
 from operator import itemgetter
@@ -575,6 +575,7 @@ class PruningFineTuner:
                 'num_workers': 3,
                 'pin_memory': True,
                 'multiprocessing_context': 'spawn',
+                'persistent_workers': True,
             }
         else:
             kwargs = {}
@@ -585,6 +586,9 @@ class PruningFineTuner:
                 dataset.get_celeba_attribute_splits_for_pruning(
                     min_male_with_attr=getattr(self.args, 'min_male_with_attr', 0),
                 )
+        elif data_type == 'basketball_imagenet':
+            train_dataset, eval_dataset = dataset.get_basketball_imagenet()
+            supplement_fnames = []
         else:
             raise ValueError(f"Unknown data_type: {self.args.data_type!r}")
 
@@ -618,64 +622,58 @@ class PruningFineTuner:
           checkpoints in prune() so that overall and subgroup stats share one pass.
         """
         self.model.eval()
-        print("[DEBUG test()] entered test()", flush=True)
         test_loss = 0
         correct = 0
         tp, fp, fn = {}, {}, {}
 
         # Subgroup accumulators — only populated when compute_subgroup=True
-        _do_sg = compute_subgroup and self.args.data_type.lower() in ('celeba_lipstick',)
+        _do_sg = compute_subgroup and self.args.data_type.lower() in (
+            'celeba_lipstick', 'watermark_imagenet')
         sg_correct, sg_total = {}, {}
         sg_tp_g, sg_fp_g, sg_fn_g = {}, {}, {}
         _ap_scores, _ap_labels, _ap_genders = [], [], []  # for per-gender AP
 
-        print(f"[DEBUG test()] creating DataLoader iterator (num_workers={self.test_loader.num_workers}, mp_context={self.test_loader.multiprocessing_context})", flush=True)
-        _test_iter = iter(self.test_loader)
-        print("[DEBUG test()] DataLoader iterator created, requesting first batch", flush=True)
-        _first_batch = next(_test_iter, None)
-        print(f"[DEBUG test()] first batch received: {None if _first_batch is None else [t.shape for t in _first_batch]}", flush=True)
+        with torch.no_grad():
+            for batch in self.test_loader:
+                data, target = batch[0], batch[1]
+                gender = batch[2] if _do_sg and len(batch) > 2 else None
+                if self.args.cuda:
+                    data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
+                data, target = Variable(data), Variable(target)
+                output = self.model(data)
 
-        import itertools as _itertools
-        for batch in _itertools.chain([_first_batch] if _first_batch is not None else [], _test_iter):
-            data, target = batch[0], batch[1]
-            gender = batch[2] if _do_sg and len(batch) > 2 else None
-            if self.args.cuda:
-                data, target = data.cuda(), target.cuda()
-            data, target = Variable(data), Variable(target)
-            output = self.model(data)
+                test_loss += self.criterion(output, target).item() * data.size(0)
+                pred = output.data.max(1, keepdim=True)[1]
+                correct += pred.eq(target.data.view_as(pred)).cpu().sum().item()
 
-            test_loss += self.criterion(output, target).item() * data.size(0)
-            pred = output.data.max(1, keepdim=True)[1]
-            correct += pred.eq(target.data.view_as(pred)).cpu().sum().item()
+                # Per-class TP/FP/FN accumulation
+                pred_flat = pred.view(-1).cpu()
+                target_flat = target.data.view(-1).cpu()
+                num_classes = output.size(1)
+                for c in range(num_classes):
+                    pred_c = (pred_flat == c)
+                    target_c = (target_flat == c)
+                    tp[c] = tp.get(c, 0) + int((pred_c & target_c).sum())
+                    fp[c] = fp.get(c, 0) + int((pred_c & ~target_c).sum())
+                    fn[c] = fn.get(c, 0) + int((~pred_c & target_c).sum())
 
-            # Per-class TP/FP/FN accumulation
-            pred_flat = pred.view(-1).cpu()
-            target_flat = target.data.view(-1).cpu()
-            num_classes = output.size(1)
-            for c in range(num_classes):
-                pred_c = (pred_flat == c)
-                target_c = (target_flat == c)
-                tp[c] = tp.get(c, 0) + int((pred_c & target_c).sum())
-                fp[c] = fp.get(c, 0) + int((pred_c & ~target_c).sum())
-                fn[c] = fn.get(c, 0) + int((~pred_c & target_c).sum())
-
-            # Per-subgroup accumulation (same pass, no extra I/O)
-            if gender is not None:
-                gender_cpu = gender.view(-1).cpu()
-                _ap_scores.append(output[:, 1].detach().cpu())
-                _ap_labels.append(target_flat)
-                _ap_genders.append(gender_cpu)
-                for p, y, g in zip(pred_flat.tolist(), target_flat.tolist(),
-                                   gender_cpu.tolist()):
-                    y, g = int(y), int(g)
-                    key = (g, y)
-                    sg_total[key]   = sg_total.get(key, 0) + 1
-                    sg_correct[key] = sg_correct.get(key, 0) + (1 if p == y else 0)
-                    if y == 1:
-                        if p == 1: sg_tp_g[g] = sg_tp_g.get(g, 0) + 1
-                        else:      sg_fn_g[g] = sg_fn_g.get(g, 0) + 1
-                    else:
-                        if p == 1: sg_fp_g[g] = sg_fp_g.get(g, 0) + 1
+                # Per-subgroup accumulation (same pass, no extra I/O)
+                if gender is not None:
+                    gender_cpu = gender.view(-1).cpu()
+                    _ap_scores.append(output[:, 1].detach().cpu())
+                    _ap_labels.append(target_flat)
+                    _ap_genders.append(gender_cpu)
+                    for p, y, g in zip(pred_flat.tolist(), target_flat.tolist(),
+                                       gender_cpu.tolist()):
+                        y, g = int(y), int(g)
+                        key = (g, y)
+                        sg_total[key]   = sg_total.get(key, 0) + 1
+                        sg_correct[key] = sg_correct.get(key, 0) + (1 if p == y else 0)
+                        if y == 1:
+                            if p == 1: sg_tp_g[g] = sg_tp_g.get(g, 0) + 1
+                            else:      sg_fn_g[g] = sg_fn_g.get(g, 0) + 1
+                        else:
+                            if p == 1: sg_fp_g[g] = sg_fp_g.get(g, 0) + 1
 
         test_loss /= len(self.test_loader.dataset)
         num_classes = len(tp)
@@ -722,8 +720,18 @@ class PruningFineTuner:
                         stats[f'ap_g{_g}'] = float(_ap_score(_lb[_mask], _sc[_mask]))
                     else:
                         stats[f'ap_g{_g}'] = _nan
-            LABEL = {(0, 0): "F-no-makeup", (0, 1): "F-makeup",
-                     (1, 0): "M-no-makeup", (1, 1): "M-makeup"}
+            _dt = self.args.data_type.lower()
+            if _dt == 'celeba_lipstick':
+                LABEL = {(0, 0): "F-no-makeup", (0, 1): "F-makeup",
+                         (1, 0): "M-no-makeup", (1, 1): "M-makeup"}
+                _grp_name = {0: 'Female', 1: 'Male'}
+            elif _dt == 'watermark_imagenet':
+                LABEL = {(0, 0): "c0w0(neg-NWM)", (0, 1): "c1w0(pos-NWM)",
+                         (1, 0): "c0w1(neg-WM)",  (1, 1): "c1w1(pos-WM)"}
+                _grp_name = {0: 'no-watermark', 1: 'watermark'}
+            else:
+                LABEL = {}
+                _grp_name = {}
             print(f"  Subgroup eval (iter {self.niter}):")
             for (g, y), tot in sorted(sg_total.items()):
                 acc = stats.get(f'acc_g{g}y{y}', _nan)
@@ -732,7 +740,7 @@ class PruningFineTuner:
             for g in all_genders:
                 p = stats.get(f'precision_g{g}', _nan); r = stats.get(f'recall_g{g}', _nan)
                 ap = stats.get(f'ap_g{g}', _nan)
-                print(f"    {'Male' if g else 'Female'}: "
+                print(f"    {_grp_name.get(g, f'g{g}')}: "
                       f"prec={'nan' if p != p else f'{p:.4f}'}  "
                       f"rec={'nan' if r != r else f'{r:.4f}'}  "
                       f"AP={'nan' if ap != ap else f'{ap:.4f}'}")
@@ -751,9 +759,10 @@ class PruningFineTuner:
         rank_cap = getattr(self.args, 'rank_n', None) if rank_filters else None
         seen = 0
 
-        for batch_idx, (data, target) in enumerate(self.train_loader):
+        for batch_idx, batch in enumerate(self.train_loader):
+            data, target = batch[0], batch[1]  # ignore optional group attr (batch[2])
             if self.args.cuda:
-                data, target = data.cuda(), target.cuda()
+                data, target = data.cuda(non_blocking=True), target.cuda(non_blocking=True)
             data, target = Variable(data), Variable(target)
 
             self.train_batch(optimizer, batch_idx, data, target, rank_filters)
@@ -801,10 +810,11 @@ class PruningFineTuner:
             pred = output.detach().max(1, keepdim=True)[1]
             self._train_correct += pred.eq(label.data.view_as(pred)).cpu().sum().item()
             self._train_total += label.size(0)
-            print('Train Epoch: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                batch_idx * len(batch), len(self.train_loader.dataset),
-                100. * batch_idx / len(self.train_loader), loss.item()))
             self.train_loss_batch += loss.item()
+            if batch_idx % 20 == 0:
+                print('Train Epoch: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    batch_idx * len(batch), len(self.train_loader.dataset),
+                    100. * batch_idx / len(self.train_loader), loss.item()))
 
     def total_num_filters(self) -> int:
         return self.adapter.total_prunable_filters()
@@ -834,7 +844,8 @@ class PruningFineTuner:
 
     def prune(self, fine_tune_conv_layers: bool = True,
               fine_tune_without_augmented_layers: bool = False,
-              final_finetune_epochs: int = 5):
+              final_finetune_epochs: int = 5,
+              iter_finetune_epochs: int = 2):
         """
         Full iterative prune-and-fine-tune loop.
 
@@ -892,6 +903,22 @@ class PruningFineTuner:
             for layer_index, filter_index in prune_targets:
                 layers_pruned[layer_index] = layers_pruned.get(layer_index, 0) + 1
             print("Layers that will be pruned", layers_pruned)
+
+            # Early-exit: stop before any layer reaches 0 filters (disconnected network)
+            _conv_seq, _ = get_conv_seq_and_name(self.model)
+            _conv_mods = list(_conv_seq._modules.items())
+            _disconnected = False
+            for _li, _cnt in layers_pruned.items():
+                _m = _conv_mods[_li][1]
+                if isinstance(_m, nn.Conv2d) and _m.out_channels <= _cnt:
+                    print(f"[prune] Layer {_li} has {_m.out_channels} filter(s); "
+                          f"pruning {_cnt} would disconnect the network. Stopping early.")
+                    _disconnected = True
+                    break
+            if _disconnected:
+                self.niter -= 1  # don't count this aborted iteration
+                break
+
             print("Pruning filters..")
 
             model = self.model.cpu()
@@ -918,7 +945,7 @@ class PruningFineTuner:
             else:
                 optimizer = None
             try:
-                self.train(optimizer, epoches=2)
+                self.train(optimizer, epoches=iter_finetune_epochs)
             finally:
                 if fine_tune_without_augmented_layers and hasattr(self.model, 'augmented'):
                     self.model.augmented = was_augmented

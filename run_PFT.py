@@ -171,7 +171,7 @@ def get_test_args():
     parser.add_argument('--total_pr', type=float, default=0.80)     # prune % total
     parser.add_argument('--rank_n', type=int, default=10000,
                     help='Number of training samples to use for ranking filters per pruning iteration')
-    parser.add_argument('--min_male_with_attr', type=int, default=200,
+    parser.add_argument('--min_male_with_attr', type=int, default=0,
                         help='Min Male+attr samples in eval set; supplement from the official '
                              'TEST split if needed. 0=disabled. Typical value for Wearing_Lipstick: 200.')
 
@@ -300,7 +300,7 @@ def test_pruning_pipeline():
     if _warmup_was_augmented:
         model.augmented = False
     model.train()
-    for epoch in range(1): #debug: reduced from 15
+    for epoch in range(15): 
         running_loss = 0.0
         for batch_idx, (data, target) in enumerate(tuner.train_loader):
             if args.cuda:

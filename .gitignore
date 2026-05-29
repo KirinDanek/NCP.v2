@@ -1,3 +1,25 @@
-data/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Slurm job logs
+logs/
+
+# Large outputs, trained models, generated figures
 results/
+results-public/
+
+# Large image datasets (regenerate via data/images/download*.py)
+data/images/imagenet_430_binary/
+data/images/carton_dugong/original/
+data/images/crate_packet/imagenet_*/
+data/images/data_large/
+data/images/celeba/img_align_celeba.zip
+
+# Editor temps
+*~
+\#*\#
+
+# Tests (generated outputs)
 tests/

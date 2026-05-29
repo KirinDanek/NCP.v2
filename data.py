@@ -134,15 +134,19 @@ class XYGOnly(torch.utils.data.Dataset):
     Used for eval loaders so that callers can slice metrics by gender without
     exposing gender to the training/ranking pipeline.
     """
-    def __init__(self, base):
+    def __init__(self, base, invert_g=False):
         self.base = base
+        self.invert_g = invert_g
 
     def __len__(self):
         return len(self.base)
 
     def __getitem__(self, idx):
         item = self.base[idx]
-        return item[0], item[1], item[2]
+        g = item[2]
+        if self.invert_g:
+            g = 1 - g
+        return item[0], item[1], g
 
 
 def get_mnist(datapath='../data/mnist/', download=True):
@@ -236,7 +240,7 @@ def get_basketball_imagenet(transform=None, root_dir=None):
     # we use the custom made ImageNetDatasetValidation class for that
     #val = ImageNetDatasetValidation(transform, root_dir=root_dir)
 
-    dataset = datasets.ImageFolder('n/fs/ncp/NCP.v2/data/images/imagenet_430_binary', transform=transform)
+    dataset = datasets.ImageFolder(str(root_dir), transform=transform)
 
     print(dataset.class_to_idx) #  should show: {'basketball': 0, 'not_basketball': 1} or vice versa
     # 80/20 split
@@ -248,16 +252,19 @@ def get_basketball_imagenet(transform=None, root_dir=None):
 
 def get_crate_imagenet(transform=None, root_dir=None):
     if root_dir is None:
-        root_dir = '/n/fs/ncp/NCP.v2/data/images/imagenet_crate_packet_prune_set_0p5_wm'
+        root_dir = '/n/fs/ncp/NCP.v2/data/images/crate_packet/imagenet_crate_packet_prune_set_0p25_wm'
     root_dir = Path(root_dir)
 
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-
+    '''
+    ### DO NOT resize and crop if images in folder are already resized and cropped!
     transform = transforms.Compose([transforms.Resize(256),
                                         transforms.CenterCrop(224),
                                         transforms.ToTensor(),
                                         normalize])
-
+    '''
+    transform = transforms.Compose([transforms.ToTensor(),
+                                        normalize])
     # we can load the training data as an ImageFolder
     #train = datasets.ImageFolder(root_dir / "train", transform)
 
@@ -315,6 +322,25 @@ def _is_male_with_attr(fn: str, idx_obj, attr_name: str) -> bool:
     return attrs.get('Male', -1) > 0 and attrs.get(attr_name, -1) > 0
 
 
+def _has_protected_with_attr(fn: str, idx_obj, attr_name: str,
+                             protected_attr: str = "Male",
+                             invert_protected: bool = False) -> bool:
+    """Return True if this filename has protected_attr g=1 AND attr_name == +1.
+
+    When invert_protected=True, g=1 means the ABSENCE of protected_attr
+    (i.e. raw == -1 maps to g=1). This is used for the glasses experiment
+    where male==no-glasses.
+    """
+    attrs = idx_obj.attrs_for(fn)
+    raw_prot = attrs.get(protected_attr, -1)
+    if invert_protected:
+        g = 1 if raw_prot < 0 else 0
+    else:
+        g = 1 if raw_prot > 0 else 0
+    y = 1 if attrs.get(attr_name, -1) > 0 else 0
+    return g == 1 and y == 1
+
+
 def get_celeba_attribute_splits_for_pruning(
     attr_name="Wearing_Lipstick",
     celeba_root="/n/fs/ncp/NCP.v2/data/images/celeba",
@@ -323,29 +349,21 @@ def get_celeba_attribute_splits_for_pruning(
     transform=None,
     require_exists=True,
     min_male_with_attr=0,
+    protected_attr="Male",
+    invert_protected=False,
 ):
     """
     Returns:
       ft_train  — XYOnly-wrapped CelebAAttributeDataset; yields (x, y).
-                  Used for training and LRP ranking. Drawn from official TRAIN
-                  minus the withheld downstream_test portion.
       prune_val — XYGOnly-wrapped CelebAAttributeDataset; yields (x, y, g)
-                  where g=1 Male / g=0 Female. Used for per-subgroup eval.
-                  Drawn from official VAL, optionally supplemented with
-                  Male+attr samples from official TEST if min_male_with_attr
-                  is not met in VAL.
-
-    Also deterministically defines a withheld downstream_test split
-    (not returned / not used in pruning), drawn from official TRAIN and
-    reproducible via seed + downstream_test_frac.
+                  where g encodes the protected attribute.
 
     Args:
-      min_male_with_attr: If > 0 and the official VAL split has fewer than
-        this many Male+attr_name images, supplement from official TEST (Male+attr
-        only) until the target is met or exhausted. Supplemental samples are
-        added to prune_val only — NOT to ft_train.
-        Typical value for Wearing_Lipstick: 200.
-        Default 0 = disabled.
+      min_male_with_attr: Min count of protected_attr g=1 + attr samples in eval.
+      protected_attr: CelebA attribute name to use as the protected/group variable.
+                      Default "Male". For glasses experiment, use "Eyeglasses".
+      invert_protected: If True, g=1 means ABSENCE of protected_attr raw value.
+                        Use with Eyeglasses so that g=1 == no-glasses (male analog).
     """
     from celeba import CelebAIndex, CelebAAttributeDataset
 
@@ -383,20 +401,20 @@ def get_celeba_attribute_splits_for_pruning(
     # prune_val base: all of official VAL.
     val_fnames = idx.filenames(split="val", require_exists=require_exists)
 
-    # Build eval filename list, supplementing Male+attr from official TEST if needed.
-    # supplement_fnames records only the added filenames (empty if no supplementation).
-    # Caller should persist this list so the exact eval set is reproducible.
+    # Build eval filename list, supplementing g=1+attr from official TEST if needed.
     eval_fnames = list(val_fnames)
     supplement_fnames: list = []
     if min_male_with_attr > 0:
-        in_val = [fn for fn in val_fnames if _is_male_with_attr(fn, idx, attr_name)]
+        in_val = [fn for fn in val_fnames
+                  if _has_protected_with_attr(fn, idx, attr_name,
+                                              protected_attr, invert_protected)]
         shortage = max(0, min_male_with_attr - len(in_val))
         if shortage > 0:
-            # Candidates: Male+attr samples from official TEST.
-            # Sort for determinism, then shuffle with a seeded RNG.
             test_fnames = idx.filenames(split="test", require_exists=require_exists)
-            candidates = sorted(fn for fn in test_fnames
-                                if _is_male_with_attr(fn, idx, attr_name))
+            candidates = sorted(
+                fn for fn in test_fnames
+                if _has_protected_with_attr(fn, idx, attr_name,
+                                            protected_attr, invert_protected))
             rng = _random.Random(seed + 2)
             rng.shuffle(candidates)
             supplement_fnames = candidates[:shortage]
@@ -404,16 +422,16 @@ def get_celeba_attribute_splits_for_pruning(
             actually_added = len(supplement_fnames)
             still_short = shortage - actually_added
             print(
-                f"[CelebA eval] Supplemented {actually_added} Male+{attr_name} "
-                f"samples from official TEST "
+                f"[CelebA eval] Supplemented {actually_added} "
+                f"{protected_attr}(g=1)+{attr_name} samples from official TEST "
                 f"(VAL had {len(in_val)}, target {min_male_with_attr}, "
                 f"available in TEST {len(candidates)})"
             )
             if still_short > 0:
                 print(
                     f"[CelebA eval] WARNING: TEST exhausted; "
-                    f"still {still_short} short of min_male_with_attr={min_male_with_attr}. "
-                    f"Actual Male+{attr_name} in eval: {len(in_val) + actually_added}"
+                    f"still {still_short} short of target={min_male_with_attr}. "
+                    f"Actual g=1+{attr_name} in eval: {len(in_val) + actually_added}"
                 )
 
     prune_val_with_gender = CelebAAttributeDataset(
@@ -421,8 +439,9 @@ def get_celeba_attribute_splits_for_pruning(
         split="val",
         target_attr=attr_name,
         transform=transform,
-        gender_as01=True,   # g in {0,1}: 0=Female, 1=Male
+        gender_as01=True,
         filenames=eval_fnames,
+        sensitive_attr=protected_attr,
     )
 
     # Important: do NOT return downstream_test here (by design).
@@ -441,6 +460,6 @@ def get_celeba_attribute_splits_for_pruning(
     # prune_val: (x, y, g) for per-subgroup eval (distribution may differ from natural
     #            prevalence if supplementation was applied)
     ft_train = XYOnly(ft_train)
-    prune_val = XYGOnly(prune_val_with_gender)
+    prune_val = XYGOnly(prune_val_with_gender, invert_g=invert_protected)
     return ft_train, prune_val, supplement_fnames
 
